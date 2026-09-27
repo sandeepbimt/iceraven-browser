@@ -31,20 +31,7 @@ const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_S
 open class ExternalAppBrowserActivity : HomeActivity() {
     private var isFinishedAnimating = false
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        if (intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP) {
-            onBackPressedDispatcher.addCallback(
-                this,
-                object : OnBackPressedCallback(true) {
-                    override fun handleOnBackPressed() {
-                        finishAndRemoveTask()
-                    }
-                },
-            )
-        }
-    }
+    private var standaloneBackCallback: OnBackPressedCallback? = null
 
     override fun onResume() {
         super.onResume()
@@ -56,6 +43,23 @@ open class ExternalAppBrowserActivity : HomeActivity() {
             // Without this the parent HomeActivity class may decide to show the browser UI and we
             // end up with multiple browsers (causing "display already acquired" crashes).
             finishAndRemoveTask()
+            return
+        }
+
+        // HomeActivity installs its normal Back callback during onCreate. This activity reaches
+        // onResume after that registration, so registering here gives standalone Fennec web-app
+        // launches a higher-priority AndroidX Back callback without overriding HomeActivity.onCreate.
+        if (
+            intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP &&
+            standaloneBackCallback == null
+        ) {
+            standaloneBackCallback =
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        finishAndRemoveTask()
+                    }
+                }
+            onBackPressedDispatcher.addCallback(this, standaloneBackCallback!!)
         }
     }
 
