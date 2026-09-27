@@ -197,14 +197,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
     }
 
     override fun onBackPressed(): Boolean {
-        if (super.onBackPressed()) {
-            return true
-        }
-
-        // A manifest-less standalone web app is its own Android task. Once the web
-        // session has no browser history to consume, Back must close that task
-        // instead of allowing the generic HomeActivity navigation stack to expose
-        // an empty/blank destination underneath the web app.
         val customTabSession = customTabSessionId?.let {
             requireComponents.core.store.state.findCustomTab(it)
         }
@@ -212,12 +204,16 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
                 args.webAppManifestUrl.isNullOrEmpty()
 
+        // Standalone shortcuts are top-level Android tasks. Do not let the generic
+        // SessionFeature consume Back by navigating the web session history: a
+        // standalone shortcut can contain redirect/history entries that otherwise
+        // expose a blank intermediate page. Back should leave the standalone task.
         if (isStandaloneWebApp) {
             requireActivity().finishAndRemoveTask()
             return true
         }
 
-        return false
+        return super.onBackPressed()
     }
 
     override fun getContextMenuCandidates(
