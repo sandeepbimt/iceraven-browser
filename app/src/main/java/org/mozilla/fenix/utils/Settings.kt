@@ -234,13 +234,9 @@ class Settings(
         get() = if (isTabStripEnabled) toolbarTabStripShortcutKey else toolbarSimpleShortcutKey
 
     /** Indicates if the Pocket recommendations homescreen section should also show sponsored stories. */
-    @Suppress("DEPRECATION")
-    val showPocketSponsoredStories by
-        lazyFeatureFlagBooleanPreference(
-            key = appContext.getPreferenceKey(R.string.pref_key_pocket_sponsored_stories),
-            defaultValue = { homescreenSections[HomeScreenSection.POCKET_SPONSORED_STORIES] == true },
-            featureFlag = ContentRecommendationsFeatureHelper.isPocketSponsoredStoriesFeatureEnabled(appContext),
-        )
+    /** V2: sponsored Pocket stories are removed from the homepage. */
+    val showPocketSponsoredStories: Boolean
+        get() = false
 
     /** Indicates whether or not the "Recently Visited" section should be shown on the home screen. */
     var historyMetadataUIFeature by
@@ -2745,13 +2741,10 @@ class Settings(
      * Indicates if the user has chosen to show sponsored search suggestions in the awesomebar. The default value is
      * computed lazily, and based on whether Firefox Suggest is enabled.
      */
-    @Suppress("DEPRECATION")
-    var showSponsoredSuggestions by
-        lazyFeatureFlagBooleanPreference(
-            key = appContext.getPreferenceKey(R.string.pref_key_show_sponsored_suggestions),
-            defaultValue = { enableFxSuggest },
-            featureFlag = FeatureFlags.FX_SUGGEST,
-        )
+    /** V2: sponsored search suggestions are permanently disabled. */
+    var showSponsoredSuggestions: Boolean
+        get() = false
+        set(_) = Unit
 
     /**
      * Indicates if the user has chosen to show search suggestions for web content in the awesomebar. The default value
@@ -3256,11 +3249,10 @@ class Settings(
         )
 
     /** Indicates if the sponsored tiles are suppressed. */
-    var suppressSponsoredTopSitesEnabled by
-        booleanPreference(
-            key = appContext.getPreferenceKey(R.string.pref_key_suppress_sponsored_tiles),
-            default = { FxNimbus.features.suppressSponsoredTopSites.value().enabled },
-        )
+    /** V2: sponsored top-site tiles are always suppressed. */
+    var suppressSponsoredTopSitesEnabled: Boolean
+        get() = true
+        set(_) = Unit
 
     /** Indicates whether or not to show the checklist feature. */
     var showSetupChecklist by

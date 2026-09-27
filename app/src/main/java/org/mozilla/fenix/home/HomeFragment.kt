@@ -1078,8 +1078,6 @@ class HomeFragment : Fragment() {
             val showStories =
                 settings.showPocketRecommendationsFeature || settings.privateModeAndStoriesEntryPointEnabled
 
-            val showSponsoredStories = showStories && settings.showPocketSponsoredStories
-
             if (showStories) {
                 components.appStore.dispatch(
                     ContentRecommendationsAction.ContentRecommendationsFetched(
@@ -1090,13 +1088,12 @@ class HomeFragment : Fragment() {
                 components.appStore.dispatch(ContentRecommendationsAction.PocketStoriesClean)
             }
 
-            if (showSponsoredStories) {
-                components.appStore.dispatch(
-                    ContentRecommendationsAction.SponsoredContentsChange(
-                        sponsoredContents = components.core.pocketStoriesService.getSponsoredContents()
-                    )
+            // V2: never fetch or retain sponsored Pocket content.
+            components.appStore.dispatch(
+                ContentRecommendationsAction.SponsoredContentsChange(
+                    sponsoredContents = emptyList()
                 )
-            }
+            )
         }
     }
 
