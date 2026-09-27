@@ -8,6 +8,7 @@ import android.app.assist.AssistContent
 import android.os.Bundle
 import android.view.MotionEvent
 import androidx.annotation.VisibleForTesting
+import androidx.activity.OnBackPressedCallback
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import mozilla.components.browser.state.selector.findCustomTab
@@ -29,6 +30,21 @@ const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_S
 @Suppress("TooManyFunctions")
 open class ExternalAppBrowserActivity : HomeActivity() {
     private var isFinishedAnimating = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        if (intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP) {
+            onBackPressedDispatcher.addCallback(
+                this,
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        finishAndRemoveTask()
+                    }
+                },
+            )
+        }
+    }
 
     override fun onResume() {
         super.onResume()
