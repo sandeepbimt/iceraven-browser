@@ -56,7 +56,7 @@ internal object StandaloneWebAppShortcutInstaller {
             Intent(context, IntentReceiverActivity::class.java).apply {
                 action = FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP
                 data = uri
-                flags = Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                flags = Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
             }
 
         val shortcut =
