@@ -133,12 +133,7 @@ private fun AddToHomeScreenMenuItem(
 ) {
     if (isAddToHomeScreenSupported) {
         MenuItem(
-            label =
-                if (isInstallable) {
-                    stringResource(id = R.string.browser_menu_add_app_to_homescreen)
-                } else {
-                    stringResource(id = R.string.browser_menu_add_to_homescreen)
-                },
+            label = stringResource(id = R.string.browser_menu_add_app_to_homescreen),
             beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_add_to_homescreen_24),
             onClick = onAddToHomeScreenMenuClick,
         )
