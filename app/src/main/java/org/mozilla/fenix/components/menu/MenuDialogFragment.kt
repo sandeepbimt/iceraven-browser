@@ -88,6 +88,7 @@ import org.mozilla.fenix.components.menu.compose.MenuDialogBottomSheet
 import org.mozilla.fenix.components.menu.compose.MenuHandleState
 import org.mozilla.fenix.components.menu.compose.MoreSettingsSubmenu
 import org.mozilla.fenix.components.menu.middleware.MenuDialogMiddleware
+import org.mozilla.fenix.components.menu.StandaloneWebAppShortcutInstaller
 import org.mozilla.fenix.components.menu.middleware.MenuNavigationMiddleware
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
 import org.mozilla.fenix.components.menu.store.BrowserMenuState
@@ -1014,6 +1015,12 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                 withContext(Dispatchers.Main) {
                     this@MenuDialogFragment.dismiss()
                 }
+            },
+            onInstallStandaloneWebApp = { session ->
+                StandaloneWebAppShortcutInstaller.requestPinShortcut(
+                    context = requireContext(),
+                    session = session,
+                )
             },
             scope = coroutineScope,
             webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
