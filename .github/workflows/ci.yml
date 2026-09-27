@@ -50,20 +50,39 @@ jobs:
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=4g -Xms1g -Xmx7g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dev/stderr"
         run: |
-          /usr/bin/time -v ./gradlew app:assembleForkRelease -PversionName=${{ env.VERSION_NAME }} --stacktrace --no-daemon
+          /usr/bin/time -v ./gradlew app:assembleForkRelease -PversionName=\${{ env.VERSION_NAME }} --stacktrace --no-daemon
 
       - name: Debug
         run: |
           /usr/bin/ls -alh gradle/build/app/outputs/apk/forkRelease/
 
-      - name: Create signed APKs
-        uses: akliuxingyuan/sign-android-release@v2.0.1
-        with:
-          releaseDir: gradle/build/app/outputs/apk/forkRelease/
-          signingKey: ${{ secrets.DEBUG_SIGNING_KEY }}
-          keyAlias: ${{ secrets.DEBUG_ALIAS }}
-          keyStorePassword: ${{ secrets.DEBUG_KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.DEBUG_KEY_PASSWORD }}
+      - name: Sign APKs with temporary test key
+        env:
+          KEYSTORE_PASSWORD: iceraven-test
+          KEY_PASSWORD: iceraven-test
+        run: |
+          set -e
+          keytool -genkeypair \
+            -keystore /tmp/iceraven-test.jks \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -alias iceraven-test \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Iceraven Test"
+          for apk in gradle/build/app/outputs/apk/forkRelease/*.apk; do
+            signed="\${apk%.apk}-signed.apk"
+            apksigner sign \
+              --ks /tmp/iceraven-test.jks \
+              --ks-key-alias iceraven-test \
+              --ks-pass pass:"$KEYSTORE_PASSWORD" \
+              --key-pass pass:"$KEY_PASSWORD" \
+              --out "$signed" \
+              "$apk"
+            mv "$signed" "$apk"
+          done
+          apksigner verify --verbose gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
 
       - name: Debug
         run: |
@@ -73,16 +92,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
-          name: ${{ env.VERSION_NAME }}-arm64-v8a.apk
+          name: \${{ env.VERSION_NAME }}-arm64-v8a.apk
 
       - name: Upload armeabi apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-armeabi-v7a-forkRelease.apk
-          name: ${{ env.VERSION_NAME }}-armeabi-v7a.apk
+          name: \${{ env.VERSION_NAME }}-armeabi-v7a.apk
 
       - name: Upload x86_64 apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk
-          name: ${{ env.VERSION_NAME }}-x86_64.apk
+          name: \${{ env.VERSION_NAME }}-x86_64.apk
