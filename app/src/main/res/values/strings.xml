@@ -4229,5 +4229,4 @@
     <string name="standalone_web_app_choose_icon">Choose image</string>
     <string name="standalone_web_app_use_default_icon">Use default</string>
     <string name="standalone_web_app_cancel">Cancel</string>
-    <string name="standalone_web_app_change_icon">Change app icon</string>
 </resources>

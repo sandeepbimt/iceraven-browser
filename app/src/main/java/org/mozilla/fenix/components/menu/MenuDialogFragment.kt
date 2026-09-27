@@ -154,32 +154,21 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
     private val browserStore by lazy { requireComponents.core.store }
     private lateinit var menuStore: MenuStore
     private var pendingStandaloneIconSession: SessionState? = null
-    private var pendingStandaloneIconUrl: String? = null
 
     private val standaloneIconPicker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             val session = pendingStandaloneIconSession
-            val url = pendingStandaloneIconUrl
             pendingStandaloneIconSession = null
-            pendingStandaloneIconUrl = null
 
-            if (uri == null || url == null) {
+            if (uri == null || session == null) {
                 return@registerForActivityResult
             }
 
-            if (session != null) {
-                StandaloneWebAppShortcutInstaller.requestPinShortcut(
-                    context = requireContext(),
-                    session = session,
-                    customIconUri = uri,
-                )
-            } else {
-                StandaloneWebAppShortcutInstaller.updateCustomIcon(
-                    context = requireContext(),
-                    url = url,
-                    iconUri = uri,
-                )
-            }
+            StandaloneWebAppShortcutInstaller.requestPinShortcut(
+                context = requireContext(),
+                session = session,
+                customIconUri = uri,
+            )
             dismiss()
         }
 
@@ -699,10 +688,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 isInstallable = webAppUseCases.isInstallable(),
                                                 isAddToHomeScreenSupported =
                                                     selectedTab != null && webAppUseCases.isPinningSupported(),
-                                                isStandaloneWebAppShortcutPinned =
-                                                    selectedTab?.content?.url?.let {
-                                                        StandaloneWebAppShortcutInstaller.isPinned(context, it)
-                                                    } == true,
                                                 hasExternalApp = appLinksRedirect?.hasExternalApp() ?: false,
                                                 externalAppName = appLinksRedirect?.appName ?: "",
                                                 isOpenInAppMenuHighlighted = isOpenInAppMenuHighlighted,
@@ -729,9 +714,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 },
                                                 onAddToHomeScreenMenuClick = {
                                                     menuStore.dispatch(MenuAction.Navigate.AddToHomeScreen)
-                                                },
-                                                onChangeStandaloneWebAppIconClick = {
-                                                    selectedTab?.content?.url?.let { showStandaloneWebAppIconPicker(it) }
                                                 },
                                                 onSaveToCollectionMenuClick = {
                                                     menuStore.dispatch(
@@ -1065,10 +1047,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
             .setMessage(R.string.standalone_web_app_icon_message)
             .setNegativeButton(R.string.standalone_web_app_cancel, null)
             .setNeutralButton(R.string.standalone_web_app_use_default_icon) { _, _ ->
-                StandaloneWebAppShortcutInstaller.clearCustomIcon(
-                    context = requireContext(),
-                    url = session.content.url,
-                )
                 StandaloneWebAppShortcutInstaller.requestPinShortcut(
                     context = requireContext(),
                     session = session,
@@ -1077,16 +1055,9 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
             }
             .setPositiveButton(R.string.standalone_web_app_choose_icon) { _, _ ->
                 pendingStandaloneIconSession = session
-                pendingStandaloneIconUrl = session.content.url
                 standaloneIconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp"))
             }
             .show()
-    }
-
-    private fun showStandaloneWebAppIconPicker(url: String) {
-        pendingStandaloneIconSession = null
-        pendingStandaloneIconUrl = url
-        standaloneIconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp"))
     }
 
     private fun createMenuTelemetryMiddleware(): MenuTelemetryMiddleware {

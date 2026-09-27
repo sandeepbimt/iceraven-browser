@@ -75,31 +75,6 @@ internal object StandaloneWebAppShortcutInstaller {
         ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
     }
 
-    fun isPinned(context: Context, url: String): Boolean {
-        return ShortcutManagerCompat
-            .getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)
-            .any { it.id == shortcutId(url) }
-    }
-
-    fun updateCustomIcon(
-        context: Context,
-        url: String,
-        iconUri: Uri,
-    ): Boolean {
-        if (!isPinned(context, url)) return false
-        val file = StandaloneWebAppIconStore.save(context, url, iconUri) ?: return false
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return false
-        val shortcut =
-            ShortcutInfoCompat.Builder(context, shortcutId(url))
-                .setIcon(IconCompat.createWithBitmap(bitmap))
-                .build()
-        return ShortcutManagerCompat.updateShortcuts(context, listOf(shortcut))
-    }
-
-    fun clearCustomIcon(context: Context, url: String) {
-        StandaloneWebAppIconStore.clear(context, url)
-    }
-
     private fun shortcutId(url: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
         val hash = digest.joinToString("") { "%02x".format(it) }.take(24)
