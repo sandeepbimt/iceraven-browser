@@ -27,6 +27,7 @@ import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ReaderState
+import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
@@ -291,13 +292,17 @@ class MenuNavigationMiddlewareTest {
         }
 
     @Test
-    fun `GIVEN current site is not installable WHEN navigate to add to home screen is dispatched THEN navigate to create home screen shortcut fragment`() =
+    fun `GIVEN current site is not installable WHEN navigate to add to home screen is dispatched THEN request standalone web app shortcut`() =
         runTest {
             val tab = createTab(url = "https://www.mozilla.org")
+            var installedSession: SessionState? = null
+            var dismissWasCalled = false
             val store =
                 createStore(
                     scope = this,
                     menuState = MenuState(browserMenuState = BrowserMenuState(selectedTab = tab)),
+                    onDismiss = { dismissWasCalled = true },
+                    onInstallStandaloneWebApp = { installedSession = it },
                 )
 
             every { webAppUseCases.isInstallable() } returns false
@@ -305,7 +310,9 @@ class MenuNavigationMiddlewareTest {
             store.dispatch(MenuAction.Navigate.AddToHomeScreen)
             testScheduler.advanceUntilIdle()
 
-            verify {
+            assertEquals(tab, installedSession)
+            assertTrue(dismissWasCalled)
+            verify(exactly = 0) {
                 navController.navigate(
                     MenuDialogFragmentDirections.actionMenuDialogFragmentToCreateShortcutFragment(),
                     navOptions = NavOptions.Builder().setPopUpTo(R.id.browserFragment, false).build(),
@@ -1232,6 +1239,7 @@ class MenuNavigationMiddlewareTest {
         webCompatReporterMoreInfoSender: WebCompatReporterMoreInfoSender = FakeWebCompatReporterMoreInfoSender(),
         openToBrowser: (params: BrowserNavigationParams) -> Unit = {},
         onDismiss: suspend () -> Unit = {},
+        onInstallStandaloneWebApp: (SessionState) -> Unit = {},
     ) =
         MenuStore(
             initialState = menuState,
@@ -1246,6 +1254,7 @@ class MenuNavigationMiddlewareTest {
                         shareUseCases = shareUseCases,
                         settings = settings,
                         onDismiss = onDismiss,
+                        onInstallStandaloneWebApp = onInstallStandaloneWebApp,
                         scope = scope,
                         webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
                     )
