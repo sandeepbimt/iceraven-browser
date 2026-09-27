@@ -40,8 +40,8 @@ internal object StandaloneWebAppShortcutInstaller {
         val uri = Uri.parse(url)
         val label =
             session.content.title
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
+                .trim()
+                .takeIf { it.isNotEmpty() }
                 ?.take(MAX_LABEL_LENGTH)
                 ?: uri.host?.take(MAX_LABEL_LENGTH)
                 ?: context.getString(R.string.app_name)
