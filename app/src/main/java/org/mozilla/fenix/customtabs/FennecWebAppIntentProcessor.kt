@@ -14,6 +14,7 @@ import java.io.IOException
 import mozilla.components.browser.state.state.ColorSchemeParams
 import mozilla.components.browser.state.state.ColorSchemes
 import mozilla.components.browser.state.state.CustomTabConfig
+import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.concept.engine.manifest.WebAppManifestParser
@@ -136,6 +137,7 @@ class FennecWebAppIntentProcessor(
 
     private fun createFallbackCustomTabConfig(): CustomTabConfig {
         return CustomTabConfig(
+            externalAppType = ExternalAppType.PROGRESSIVE_WEB_APP,
             colorSchemes =
                 ColorSchemes(
                     defaultColorSchemeParams =
