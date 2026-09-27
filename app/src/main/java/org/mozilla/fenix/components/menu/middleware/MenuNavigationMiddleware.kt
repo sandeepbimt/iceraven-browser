@@ -74,6 +74,7 @@ class MenuNavigationMiddleware(
     private val shareUseCases: ShareUseCases,
     private val settings: Settings,
     private val onDismiss: suspend () -> Unit,
+    private val onInstallStandaloneWebApp: (SessionState) -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main),
     private val webCompatReporterMoreInfoSender: WebCompatReporterMoreInfoSender,
 ) : Middleware<MenuState, MenuAction> {
@@ -184,11 +185,10 @@ class MenuNavigationMiddleware(
                         webAppUseCases.addToHomescreen()
                         onDismiss()
                     } else {
-                        navController.nav(
-                            R.id.menuDialogFragment,
-                            MenuDialogFragmentDirections.actionMenuDialogFragmentToCreateShortcutFragment(),
-                            navOptions = NavOptions.Builder().setPopUpTo(R.id.browserFragment, false).build(),
-                        )
+                        currentState.browserMenuState?.selectedTab?.let { session ->
+                            onInstallStandaloneWebApp(session)
+                        }
+                        onDismiss()
                     }
                 }
 
