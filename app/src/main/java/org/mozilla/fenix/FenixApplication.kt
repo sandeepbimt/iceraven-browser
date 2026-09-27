@@ -293,7 +293,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // We delay the Glean initialization until we have user consent from onboarding.
         // If onboarding is disabled (when in local builds), continue to initialize Glean.
         if (components.fenixOnboarding.userHasBeenOnboarded() || !FeatureFlags.onboardingFeatureEnabled) {
-            initializeGlean(this, logger, components.settings.isTelemetryEnabled, components.core.client)
+            initializeGlean(this, logger, false, components.core.client)
         }
     }
 
@@ -398,16 +398,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             startMetricsIfEnabled(
                 logger = logger,
                 analytics = components.analytics,
-                isTelemetryEnabled = components.settings.isTelemetryEnabled,
-                isMarketingTelemetryEnabled =
-                    components.settings.isMarketingTelemetryEnabled &&
-                        components.settings.hasMadeMarketingTelemetrySelection,
-                isDailyUsagePingEnabled = components.settings.isDailyUsagePingEnabled,
+                isTelemetryEnabled = false,
+                isMarketingTelemetryEnabled = false,
+                isDailyUsagePingEnabled = false,
             )
         } else {
-            CoroutineScope(IO).launch {
-                components.distributionIdManager.startAdjustIfSkippingConsentScreen()
-            }
+            // V1 privacy hardening: do not start Adjust automatically for distribution installs.
+            // Marketing/attribution startup is intentionally disabled in this build.
         }
 
         setupPush()

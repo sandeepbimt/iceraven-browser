@@ -64,7 +64,8 @@ fun initializeGlean(applicationContext: Context, logger: Logger, isTelemetryUplo
     Glean.initialize(
         applicationContext = applicationContext,
         configuration = configuration.setCustomEndpointIfAvailable(customEndpoint),
-        uploadEnabled = isTelemetryUploadEnabled,
+        // V1 privacy hardening: never upload Glean telemetry from this build.
+        uploadEnabled = false,
         buildInfo = GleanBuildInfo.buildInfo,
     )
 

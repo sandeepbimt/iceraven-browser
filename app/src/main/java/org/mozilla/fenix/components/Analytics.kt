@@ -50,6 +50,8 @@ import org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION
 import org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
 
 /** Component group for all functionality related to analytics e.g. crash reporting and telemetry. */
+private const val CRASH_REPORT_UPLOAD_ENABLED = false
+
 class Analytics(
     private val context: Context,
     private val settings: Settings,
@@ -60,7 +62,7 @@ class Analytics(
         val services = mutableListOf<CrashReporterService>()
         val distributionId = "Mozilla"
 
-        if (isSentryEnabled()) {
+        if (CRASH_REPORT_UPLOAD_ENABLED && isSentryEnabled()) {
             // We treat caught exceptions similar to debug logging.
             // On the release channel volume of these is too high for our Sentry instances, and
             // we get most value out of nightly/beta logging anyway.
@@ -105,7 +107,9 @@ class Analytics(
                 releaseChannel = MOZ_UPDATE_CHANNEL,
                 distributionId = distributionId,
             )
-        services.add(socorroService)
+        if (CRASH_REPORT_UPLOAD_ENABLED) {
+            services.add(socorroService)
+        }
 
         val intent =
             Intent(context, HomeActivity::class.java).apply {
@@ -129,15 +133,19 @@ class Analytics(
             context = context,
             services = services,
             telemetryServices =
-                listOf(
-                    GleanCrashReporterService(
-                        context,
-                        appChannel = MOZ_UPDATE_CHANNEL,
-                        appVersion = MOZ_APP_VERSION,
-                        appBuildId = MOZ_APP_BUILDID,
-                        isUploadEnabled = settings.isTelemetryEnabled,
+                if (CRASH_REPORT_UPLOAD_ENABLED) {
+                    listOf(
+                        GleanCrashReporterService(
+                            context,
+                            appChannel = MOZ_UPDATE_CHANNEL,
+                            appVersion = MOZ_APP_VERSION,
+                            appBuildId = MOZ_APP_BUILDID,
+                            isUploadEnabled = false,
+                        )
                     )
-                ),
+                } else {
+                    emptyList()
+                },
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             promptConfiguration =
                 CrashReporter.PromptConfiguration(
