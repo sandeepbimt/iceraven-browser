@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.OvershootInterpolator
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -152,6 +153,35 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
     private var isPrivate: Boolean = false
     private val browserStore by lazy { requireComponents.core.store }
     private lateinit var menuStore: MenuStore
+    private var pendingStandaloneIconSession: SessionState? = null
+    private var pendingStandaloneIconUrl: String? = null
+
+    private val standaloneIconPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val session = pendingStandaloneIconSession
+            val url = pendingStandaloneIconUrl
+            pendingStandaloneIconSession = null
+            pendingStandaloneIconUrl = null
+
+            if (uri == null || url == null) {
+                return@registerForActivityResult
+            }
+
+            if (session != null) {
+                StandaloneWebAppShortcutInstaller.requestPinShortcut(
+                    context = requireContext(),
+                    session = session,
+                    customIconUri = uri,
+                )
+            } else {
+                StandaloneWebAppShortcutInstaller.updateCustomIcon(
+                    context = requireContext(),
+                    url = url,
+                    iconUri = uri,
+                )
+            }
+            dismiss()
+        }
 
     private val deleteBrowsingDataController: DeleteBrowsingDataController by lazy {
         DefaultDeleteBrowsingDataController(
@@ -669,6 +699,10 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 isInstallable = webAppUseCases.isInstallable(),
                                                 isAddToHomeScreenSupported =
                                                     selectedTab != null && webAppUseCases.isPinningSupported(),
+                                                isStandaloneWebAppShortcutPinned =
+                                                    selectedTab?.content?.url?.let {
+                                                        StandaloneWebAppShortcutInstaller.isPinned(context, it)
+                                                    } == true,
                                                 hasExternalApp = appLinksRedirect?.hasExternalApp() ?: false,
                                                 externalAppName = appLinksRedirect?.appName ?: "",
                                                 isOpenInAppMenuHighlighted = isOpenInAppMenuHighlighted,
@@ -695,6 +729,9 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 },
                                                 onAddToHomeScreenMenuClick = {
                                                     menuStore.dispatch(MenuAction.Navigate.AddToHomeScreen)
+                                                },
+                                                onChangeStandaloneWebAppIconClick = {
+                                                    selectedTab?.content?.url?.let { showStandaloneWebAppIconPicker(it) }
                                                 },
                                                 onSaveToCollectionMenuClick = {
                                                     menuStore.dispatch(
@@ -1016,15 +1053,40 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                     this@MenuDialogFragment.dismiss()
                 }
             },
-            onInstallStandaloneWebApp = { session ->
+            onInstallStandaloneWebApp = ::showStandaloneWebAppIconDialog,
+            scope = coroutineScope,
+            webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
+        )
+    }
+
+    private fun showStandaloneWebAppIconDialog(session: SessionState) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.standalone_web_app_icon_title)
+            .setMessage(R.string.standalone_web_app_icon_message)
+            .setNegativeButton(R.string.standalone_web_app_cancel, null)
+            .setNeutralButton(R.string.standalone_web_app_use_default_icon) { _, _ ->
+                StandaloneWebAppShortcutInstaller.clearCustomIcon(
+                    context = requireContext(),
+                    url = session.content.url,
+                )
                 StandaloneWebAppShortcutInstaller.requestPinShortcut(
                     context = requireContext(),
                     session = session,
                 )
-            },
-            scope = coroutineScope,
-            webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
-        )
+                dismiss()
+            }
+            .setPositiveButton(R.string.standalone_web_app_choose_icon) { _, _ ->
+                pendingStandaloneIconSession = session
+                pendingStandaloneIconUrl = session.content.url
+                standaloneIconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp"))
+            }
+            .show()
+    }
+
+    private fun showStandaloneWebAppIconPicker(url: String) {
+        pendingStandaloneIconSession = null
+        pendingStandaloneIconUrl = url
+        standaloneIconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp"))
     }
 
     private fun createMenuTelemetryMiddleware(): MenuTelemetryMiddleware {

@@ -30,6 +30,7 @@ internal fun MoreSettingsSubmenu(
     isPinned: Boolean,
     isInstallable: Boolean,
     isAddToHomeScreenSupported: Boolean,
+    isStandaloneWebAppShortcutPinned: Boolean,
     hasExternalApp: Boolean,
     externalAppName: String,
     isReaderViewActive: Boolean,
@@ -46,6 +47,7 @@ internal fun MoreSettingsSubmenu(
     onSummarizePageClick: () -> Unit,
     onShortcutsMenuClick: () -> Unit,
     onAddToHomeScreenMenuClick: () -> Unit,
+    onChangeStandaloneWebAppIconClick: () -> Unit,
     onSaveToCollectionMenuClick: () -> Unit,
     onSaveAsPDFMenuClick: () -> Unit,
     onPrintMenuClick: () -> Unit,
@@ -80,6 +82,11 @@ internal fun MoreSettingsSubmenu(
             isInstallable = isInstallable,
             onAddToHomeScreenMenuClick = onAddToHomeScreenMenuClick,
         )
+        if (isStandaloneWebAppShortcutPinned) {
+            ChangeStandaloneWebAppIconMenuItem(
+                onChangeStandaloneWebAppIconClick = onChangeStandaloneWebAppIconClick,
+            )
+        }
         SaveToCollectionMenuItem(
             showSaveToCollection = showSaveToCollection,
             onSaveToCollectionMenuClick = onSaveToCollectionMenuClick,
@@ -96,6 +103,17 @@ internal fun MoreSettingsSubmenu(
             onPrintMenuClick = onPrintMenuClick,
         )
     }
+}
+
+@Composable
+private fun ChangeStandaloneWebAppIconMenuItem(
+    onChangeStandaloneWebAppIconClick: () -> Unit,
+) {
+    MenuItem(
+        label = stringResource(id = R.string.standalone_web_app_change_icon),
+        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_add_to_homescreen_24),
+        onClick = onChangeStandaloneWebAppIconClick,
+    )
 }
 
 @Composable
@@ -262,6 +280,7 @@ private fun MoreSettingsSubmenuPreview(@PreviewParameter(PreviewThemeProvider::c
                     isPinned = true,
                     isInstallable = true,
                     isAddToHomeScreenSupported = true,
+                    isStandaloneWebAppShortcutPinned = false,
                     hasExternalApp = true,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
@@ -290,6 +309,7 @@ private fun MoreSettingsSubmenuPreview(@PreviewParameter(PreviewThemeProvider::c
                     onSummarizePageClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},
+                    onChangeStandaloneWebAppIconClick = {},
                     onSaveToCollectionMenuClick = {},
                     onSaveAsPDFMenuClick = {},
                     onPrintMenuClick = {},
@@ -315,6 +335,7 @@ private fun MoreSettingsSubmenuDisabledOpenPreview(@PreviewParameter(PreviewThem
                     isPinned = false,
                     isInstallable = true,
                     isAddToHomeScreenSupported = false,
+                    isStandaloneWebAppShortcutPinned = false,
                     hasExternalApp = false,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
@@ -338,6 +359,7 @@ private fun MoreSettingsSubmenuDisabledOpenPreview(@PreviewParameter(PreviewThem
                     onSummarizePageClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},
+                    onChangeStandaloneWebAppIconClick = {},
                     onSaveToCollectionMenuClick = {},
                     onSaveAsPDFMenuClick = {},
                     onPrintMenuClick = {},

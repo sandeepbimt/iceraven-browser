@@ -188,7 +188,6 @@ class MenuNavigationMiddleware(
                         currentState.browserMenuState?.selectedTab?.let { session ->
                             onInstallStandaloneWebApp(session)
                         }
-                        onDismiss()
                     }
                 }
 

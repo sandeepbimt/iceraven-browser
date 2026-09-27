@@ -4224,4 +4224,10 @@
     <string name="pdf_tools_signature_clear_button">Clear</string>
     <!-- The text for the button that adds the signature the user has typed to the PDF. -->
     <string name="pdf_tools_signature_add_button">Add</string>
+    <string name="standalone_web_app_icon_title">App icon</string>
+    <string name="standalone_web_app_icon_message">Choose an icon for this app.</string>
+    <string name="standalone_web_app_choose_icon">Choose image</string>
+    <string name="standalone_web_app_use_default_icon">Use default</string>
+    <string name="standalone_web_app_cancel">Cancel</string>
+    <string name="standalone_web_app_change_icon">Change app icon</string>
 </resources>

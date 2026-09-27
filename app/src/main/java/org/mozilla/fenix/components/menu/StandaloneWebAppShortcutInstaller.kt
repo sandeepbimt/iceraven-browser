@@ -6,6 +6,7 @@ package org.mozilla.fenix.components.menu
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -27,6 +28,7 @@ internal object StandaloneWebAppShortcutInstaller {
     fun requestPinShortcut(
         context: Context,
         session: SessionState,
+        customIconUri: Uri? = null,
     ) {
         val url = session.content.url
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -35,6 +37,10 @@ internal object StandaloneWebAppShortcutInstaller {
 
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
             return
+        }
+
+        if (customIconUri != null) {
+            StandaloneWebAppIconStore.save(context, url, customIconUri)
         }
 
         val uri = Uri.parse(url)
@@ -57,11 +63,41 @@ internal object StandaloneWebAppShortcutInstaller {
             ShortcutInfoCompat.Builder(context, shortcutId(url))
                 .setShortLabel(label)
                 .setLongLabel(label)
-                .setIcon(IconCompat.createWithResource(context, R.mipmap.ic_launcher))
+                .setIcon(
+                    StandaloneWebAppIconStore.get(context, url)
+                        ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                        ?.let { IconCompat.createWithBitmap(it) }
+                        ?: IconCompat.createWithResource(context, R.mipmap.ic_launcher)
+                )
                 .setIntent(launchIntent)
                 .build()
 
         ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+    }
+
+    fun isPinned(context: Context, url: String): Boolean {
+        return ShortcutManagerCompat
+            .getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)
+            .any { it.id == shortcutId(url) }
+    }
+
+    fun updateCustomIcon(
+        context: Context,
+        url: String,
+        iconUri: Uri,
+    ): Boolean {
+        if (!isPinned(context, url)) return false
+        val file = StandaloneWebAppIconStore.save(context, url, iconUri) ?: return false
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return false
+        val shortcut =
+            ShortcutInfoCompat.Builder(context, shortcutId(url))
+                .setIcon(IconCompat.createWithBitmap(bitmap))
+                .build()
+        return ShortcutManagerCompat.updateShortcuts(context, listOf(shortcut))
+    }
+
+    fun clearCustomIcon(context: Context, url: String) {
+        StandaloneWebAppIconStore.clear(context, url)
     }
 
     private fun shortcutId(url: String): String {
