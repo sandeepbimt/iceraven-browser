@@ -94,16 +94,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
-          name: \${{ env.VERSION_NAME }}-arm64-v8a.apk
+          name: iceraven-standalone-arm64-v8a
 
       - name: Upload armeabi apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-armeabi-v7a-forkRelease.apk
-          name: \${{ env.VERSION_NAME }}-armeabi-v7a.apk
+          name: iceraven-standalone-armeabi-v7a
 
       - name: Upload x86_64 apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk
-          name: \${{ env.VERSION_NAME }}-x86_64.apk
+          name: iceraven-standalone-x86_64
