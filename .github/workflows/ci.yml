@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - iceraven
+      - standalone-webapps-2.49.0
 
 jobs:
   release-automation:
