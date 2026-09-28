@@ -170,6 +170,7 @@ import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.OnLongPressedListener
 import org.mozilla.fenix.OpenInFirefoxBinding
 import org.mozilla.fenix.R
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.ReaderViewBinding
 import org.mozilla.fenix.bindings.FindInPageBinding
 import org.mozilla.fenix.bindings.SummarizeToolbarCFRBinding
@@ -516,6 +517,14 @@ abstract class BaseBrowserFragment :
         val store = context.components.core.store
         val activity = requireActivity() as HomeActivity
         val appStore = context.components.appStore
+
+        IceravenDebugTrace.log(
+            "PWA_BASE_INITIALIZE_UI",
+            "sessionId" to customTabSessionId,
+            "url" to (tab as? CustomTabSessionState)?.content?.url,
+            "engineSessionPresent" to ((tab as? CustomTabSessionState)?.engineState?.engineSession != null),
+            "contentCanGoBack" to (tab as? CustomTabSessionState)?.content?.canGoBack,
+        )
 
         val openInFenixIntent =
             Intent(context, IntentReceiverActivity::class.java).apply {
@@ -1998,6 +2007,18 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onResume() {
+        if (customTabSessionId != null) {
+            val session = requireComponents.core.store.state.findCustomTab(customTabSessionId)
+            IceravenDebugTrace.log(
+                "PWA_BASE_RESUME",
+                "sessionId" to customTabSessionId,
+                "sessionExists" to (session != null),
+                "url" to session?.content?.url,
+                "contentCanGoBack" to session?.content?.canGoBack,
+                "engineSessionPresent" to (session?.engineState?.engineSession != null),
+                "viewPresent" to (view != null),
+            )
+        }
         super.onResume()
         val components = requireComponents
 
@@ -2024,6 +2045,14 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onPause() {
+        if (customTabSessionId != null) {
+            IceravenDebugTrace.log(
+                "PWA_BASE_PAUSE",
+                "sessionId" to customTabSessionId,
+                "sessionExists" to (requireComponents.core.store.state.findCustomTab(customTabSessionId) != null),
+                "viewPresent" to (view != null),
+            )
+        }
         super.onPause()
         view?.hideKeyboard()
     }
@@ -2038,6 +2067,16 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onStop() {
+        if (customTabSessionId != null) {
+            val session = requireComponents.core.store.state.findCustomTab(customTabSessionId)
+            IceravenDebugTrace.log(
+                "PWA_BASE_STOP",
+                "sessionId" to customTabSessionId,
+                "sessionExists" to (session != null),
+                "url" to session?.content?.url,
+                "engineSessionPresent" to (session?.engineState?.engineSession != null),
+            )
+        }
         super.onStop()
         dismissDownloadDialogs()
 
@@ -2051,11 +2090,46 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onBackPressed(): Boolean {
-        return findInPageIntegration.onBackPressed() ||
-            fullScreenFeature.onBackPressed() ||
-            promptsFeature.onBackPressed() ||
-            sessionFeature.onBackPressed() ||
-            lastTabFeature.onBackPressed()
+        val session = customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it) }
+        IceravenDebugTrace.log(
+            "PWA_BASE_BACK_ENTER",
+            "sessionId" to customTabSessionId,
+            "url" to session?.content?.url,
+            "contentCanGoBack" to session?.content?.canGoBack,
+            "engineSessionPresent" to (session?.engineState?.engineSession != null),
+        )
+
+        val handledByFindInPage = findInPageIntegration.onBackPressed()
+        if (handledByFindInPage) {
+            IceravenDebugTrace.log("PWA_BASE_BACK_HANDLED", "handler" to "findInPage")
+            return true
+        }
+
+        val handledByFullscreen = fullScreenFeature.onBackPressed()
+        if (handledByFullscreen) {
+            IceravenDebugTrace.log("PWA_BASE_BACK_HANDLED", "handler" to "fullscreen")
+            return true
+        }
+
+        val handledByPrompts = promptsFeature.onBackPressed()
+        if (handledByPrompts) {
+            IceravenDebugTrace.log("PWA_BASE_BACK_HANDLED", "handler" to "prompts")
+            return true
+        }
+
+        val handledBySession = sessionFeature.onBackPressed()
+        IceravenDebugTrace.log(
+            "PWA_BASE_BACK_SESSION",
+            "handled" to handledBySession,
+            "sessionId" to customTabSessionId,
+            "urlAfter" to customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it)?.content?.url },
+            "contentCanGoBackAfter" to customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it)?.content?.canGoBack },
+        )
+        if (handledBySession) return true
+
+        val handledByLastTab = lastTabFeature.onBackPressed()
+        IceravenDebugTrace.log("PWA_BASE_BACK_LAST_TAB", "handled" to handledByLastTab)
+        return handledByLastTab
     }
 
     @CallSuper
@@ -2342,6 +2416,12 @@ abstract class BaseBrowserFragment :
      * Dereference these views when the fragment view is destroyed to prevent memory leaks
      */
     override fun onDestroyView() {
+        IceravenDebugTrace.log(
+            "PWA_BASE_DESTROY_VIEW",
+            "sessionId" to customTabSessionId,
+            "activityFinishing" to requireActivity().isFinishing,
+            "sessionExists" to customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it) != null },
+        )
         super.onDestroyView()
 
         // Diagnostic breadcrumb for "Display already aquired" crash:

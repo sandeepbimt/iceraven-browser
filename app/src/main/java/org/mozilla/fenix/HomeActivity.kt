@@ -150,6 +150,7 @@ import org.mozilla.fenix.ext.breadcrumb
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getBreadcrumbMessage
 import org.mozilla.fenix.ext.getIntentSessionId
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.ext.getIntentSource
 import org.mozilla.fenix.ext.getNavDirections
 import org.mozilla.fenix.ext.hasTopDestination
@@ -424,6 +425,12 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
                 dispatcher = onBackPressedDispatcher,
             ) {
             override fun handleOnBackPressed() {
+                IceravenDebugTrace.log(
+                    "ACTIVITY_BACK_DISPATCH",
+                    "activity" to this@HomeActivity::class.java.simpleName,
+                    "isFinishing" to isFinishing,
+                    "fragmentCount" to supportFragmentManager.fragments.size,
+                )
                 if (shouldUsePredictiveBackLongPress()) {
                     backLongPressJob?.cancel()
                 }

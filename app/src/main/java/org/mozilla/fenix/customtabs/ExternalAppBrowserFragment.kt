@@ -29,6 +29,7 @@ import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BaseBrowserFragment
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.browser.ContextMenuSnackbarDelegate
 import org.mozilla.fenix.browser.CustomTabColorsBinding
 import org.mozilla.fenix.browser.CustomTabContextMenuCandidate
@@ -59,6 +60,12 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
     private val standaloneWebAppNavigationObserver = object : EngineSession.Observer {
         override fun onNavigationStateChange(canGoBack: Boolean?, canGoForward: Boolean?) {
             canGoBack?.let { standaloneWebAppCanGoBack = it }
+            IceravenDebugTrace.log(
+                "PWA_NAV_STATE",
+                "canGoBack" to canGoBack,
+                "canGoForward" to canGoForward,
+                "sessionId" to customTabSessionId,
+            )
         }
     }
 
@@ -227,23 +234,77 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
                 args.webAppManifestUrl.isNullOrEmpty()
 
+        IceravenDebugTrace.log(
+            "PWA_BACK_ENTER",
+            "isStandalone" to isStandaloneWebApp,
+            "sessionId" to customTabSession?.id,
+            "url" to customTabSession?.content?.url,
+            "contentCanGoBack" to customTabSession?.content?.canGoBack,
+            "engineCanGoBack" to standaloneWebAppCanGoBack,
+            "engineSessionPresent" to (customTabSession?.engineState?.engineSession != null),
+            "activityFinishing" to requireActivity().isFinishing,
+        )
+
         if (isStandaloneWebApp) {
             // Use the same BrowserStore/session use case as normal browser Back. Directly
             // calling EngineSession.goBack bypasses the store/presenter path and can leave
             // the standalone PWA with a blank rendered view after navigating back.
             if (standaloneWebAppCanGoBack) {
+                IceravenDebugTrace.log(
+                    "PWA_BACK_DISPATCH",
+                    "sessionId" to customTabSession.id,
+                    "urlBefore" to customTabSession.content.url,
+                )
                 requireComponents.useCases.sessionUseCases.goBack(
                     tabId = customTabSession.id,
                     userInteraction = true,
                 )
+                IceravenDebugTrace.log(
+                    "PWA_BACK_HANDLED",
+                    "mode" to "goBackUseCase",
+                    "sessionId" to customTabSession.id,
+                )
                 return true
             }
 
+            IceravenDebugTrace.log(
+                "PWA_BACK_EXIT",
+                "sessionId" to customTabSession?.id,
+                "reason" to "noHistory",
+            )
             requireActivity().finishAndRemoveTask()
             return true
         }
 
         return super.onBackPressed()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        IceravenDebugTrace.log(
+            "PWA_FRAGMENT_RESUME",
+            "sessionId" to customTabSessionId,
+            "url" to customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it)?.content?.url },
+            "viewPresent" to (view != null),
+        )
+    }
+
+    override fun onPause() {
+        IceravenDebugTrace.log(
+            "PWA_FRAGMENT_PAUSE",
+            "sessionId" to customTabSessionId,
+            "url" to customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it)?.content?.url },
+        )
+        super.onPause()
+    }
+
+    override fun onDestroyView() {
+        IceravenDebugTrace.log(
+            "PWA_FRAGMENT_DESTROY_VIEW",
+            "sessionId" to customTabSessionId,
+            "activityFinishing" to requireActivity().isFinishing,
+        )
+        super.onDestroyView()
     }
 
     override fun getContextMenuCandidates(

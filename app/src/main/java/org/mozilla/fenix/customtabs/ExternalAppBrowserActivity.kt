@@ -19,6 +19,7 @@ import mozilla.components.support.utils.SafeIntent
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getIntentSessionId
+import org.mozilla.fenix.debug.IceravenDebugTrace
 
 const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_SANDBOX_CUSTOM_TAB"
 
@@ -33,18 +34,55 @@ open class ExternalAppBrowserActivity : HomeActivity() {
     override fun onResume() {
         super.onResume()
 
+        IceravenDebugTrace.log(
+            "PWA_ACTIVITY_RESUME",
+            "sessionId" to getExternalTabId(),
+            "hasExternalTab" to hasExternalTab(),
+            "intentFlags" to intent.flags,
+            "isFinishing" to isFinishing,
+        )
+
         if (!hasExternalTab()) {
             // An ExternalAppBrowserActivity is always bound to a specific tab. If this tab doesn't
             // exist anymore on resume then this activity has nothing to display anymore. Let's just
             // finish it AND remove this task to avoid it hanging around in the recent apps screen.
             // Without this the parent HomeActivity class may decide to show the browser UI and we
             // end up with multiple browsers (causing "display already acquired" crashes).
+            IceravenDebugTrace.log(
+                "PWA_ACTIVITY_FINISH_NO_TAB",
+                "sessionId" to getExternalTabId(),
+            )
             finishAndRemoveTask()
             return
         }
     }
 
+    override fun onPause() {
+        IceravenDebugTrace.log(
+            "PWA_ACTIVITY_PAUSE",
+            "sessionId" to getExternalTabId(),
+            "isFinishing" to isFinishing,
+        )
+        super.onPause()
+    }
+
+    override fun onStop() {
+        IceravenDebugTrace.log(
+            "PWA_ACTIVITY_STOP",
+            "sessionId" to getExternalTabId(),
+            "isFinishing" to isFinishing,
+        )
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        IceravenDebugTrace.log(
+            "PWA_ACTIVITY_DESTROY_ENTER",
+            "sessionId" to getExternalTabId(),
+            "isFinishing" to isFinishing,
+            "hasExternalTab" to hasExternalTab(),
+        )
+        super.onDestroy()
         super.onDestroy()
 
         if (isFinishing) {
@@ -54,6 +92,12 @@ open class ExternalAppBrowserActivity : HomeActivity() {
             val tabId = getExternalTabId()
             val customTab = tabId?.let { components.core.store.state.findCustomTab(it) }
             if (tabId != null && customTab != null) {
+                IceravenDebugTrace.log(
+                    "PWA_SESSION_REMOVE",
+                    "sessionId" to tabId,
+                    "url" to customTab.content.url,
+                    "engineSessionPresent" to (customTab.engineState.engineSession != null),
+                )
                 components.useCases.customTabsUseCases.remove(tabId)
             }
         }
