@@ -17,9 +17,9 @@ import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 import mozilla.components.support.utils.SafeIntent
 import org.mozilla.fenix.HomeActivity
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getIntentSessionId
-import org.mozilla.fenix.debug.IceravenDebugTrace
 
 const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_SANDBOX_CUSTOM_TAB"
 
@@ -57,24 +57,6 @@ open class ExternalAppBrowserActivity : HomeActivity() {
         }
     }
 
-    override fun onPause() {
-        IceravenDebugTrace.log(
-            "PWA_ACTIVITY_PAUSE",
-            "sessionId" to getExternalTabId(),
-            "isFinishing" to isFinishing,
-        )
-        super.onPause()
-    }
-
-    override fun onStop() {
-        IceravenDebugTrace.log(
-            "PWA_ACTIVITY_STOP",
-            "sessionId" to getExternalTabId(),
-            "isFinishing" to isFinishing,
-        )
-        super.onStop()
-    }
-
     override fun onDestroy() {
         IceravenDebugTrace.log(
             "PWA_ACTIVITY_DESTROY_ENTER",
@@ -82,7 +64,6 @@ open class ExternalAppBrowserActivity : HomeActivity() {
             "isFinishing" to isFinishing,
             "hasExternalTab" to hasExternalTab(),
         )
-        super.onDestroy()
         super.onDestroy()
 
         if (isFinishing) {
