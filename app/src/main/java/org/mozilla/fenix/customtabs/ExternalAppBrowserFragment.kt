@@ -228,11 +228,14 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 args.webAppManifestUrl.isNullOrEmpty()
 
         if (isStandaloneWebApp) {
-            // For standalone PWAs use Gecko's navigation-state signal rather than
-            // CustomTabSessionState.content.canGoBack. This preserves web history
-            // inside the PWA and only exits the dedicated task at the true entry page.
+            // Use the same BrowserStore/session use case as normal browser Back. Directly
+            // calling EngineSession.goBack bypasses the store/presenter path and can leave
+            // the standalone PWA with a blank rendered view after navigating back.
             if (standaloneWebAppCanGoBack) {
-                customTabSession.engineState.engineSession?.goBack(userInteraction = true)
+                requireComponents.useCases.sessionUseCases.goBack(
+                    tabId = customTabSession.id,
+                    userInteraction = true,
+                )
                 return true
             }
 
