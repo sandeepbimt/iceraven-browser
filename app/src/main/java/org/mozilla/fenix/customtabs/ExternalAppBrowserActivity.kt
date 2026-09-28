@@ -16,6 +16,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 import mozilla.components.support.utils.SafeIntent
+import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.ext.components
@@ -54,6 +55,15 @@ open class ExternalAppBrowserActivity : HomeActivity() {
             )
             finishAndRemoveTask()
             return
+        }
+
+        // The PWA window is now entering the visible/resumed state. Defer the Fenix
+        // WebExtensionSupport registration by one UI turn so it cannot compete with the first
+        // PWA frame on the cold-launch path. Gecko/uBO startup is already allowed to proceed
+        // independently from Application.onCreate.
+        window.decorView.post {
+            IceravenDebugTrace.log("PWA_WEBEXT_DEFERRED_INIT")
+            (application as? FenixApplication)?.initializeWebExtensionSupportIfNeeded()
         }
     }
 
