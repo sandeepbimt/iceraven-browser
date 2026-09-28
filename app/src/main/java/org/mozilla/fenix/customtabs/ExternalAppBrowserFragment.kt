@@ -236,7 +236,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 return true
             }
 
-            requireActivity().finishAndRemoveTask()
+            requireActivity().finish()
             return true
         }
 
