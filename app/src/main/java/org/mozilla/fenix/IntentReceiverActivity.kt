@@ -98,30 +98,18 @@ class IntentReceiverActivity : Activity() {
             }
         }
 
-        // PWA launches are intentionally held until WebExtensionSupport has loaded
-        // installed extensions. Gecko itself is already being prewarmed in
-        // FenixApplication.onCreate(), so this wait addresses ordering rather than
-        // adding an arbitrary startup delay.
+        // Gecko and WebExtension startup are prewarmed by FenixApplication.onCreate().
+        // Do not serialize PWA launch behind extension initialization.
         val isPwaLaunch = intent.action == ACTION_VIEW_PWA
         if (isPwaLaunch) {
             components.core.engine.speculativeCreateSession(private = private)
-            (application as FenixApplication).whenWebExtensionStartupReady {
-                if (!isFinishing) {
-                    processIntentAfterPwaReadiness(intent, private)
-                }
-            }
-            return
         }
 
-        processIntentAfterPwaReadiness(intent, private)
-    }
-
-    private fun processIntentAfterPwaReadiness(intent: Intent, privateMode: Boolean) {
-        val processor = getIntentProcessors(privateMode).firstOrNull { it.process(intent) }
+        val processor = getIntentProcessors(private).firstOrNull { it.process(intent) }
         val intentProcessorType = components.intentProcessors.getType(processor)
 
-        if (intentProcessorType.shouldOpenToBrowser(intent)) {
-            components.core.engine.speculativeCreateSession(private = privateMode)
+        if (intentProcessorType.shouldOpenToBrowser(intent) && !isPwaLaunch) {
+            components.core.engine.speculativeCreateSession(private = private)
         }
 
         launch(intent, intentProcessorType)
