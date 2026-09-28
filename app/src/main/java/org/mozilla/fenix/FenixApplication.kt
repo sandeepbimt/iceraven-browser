@@ -338,7 +338,15 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // before pages can begin to render.
         // Here we access the engine property, which will cause the lazy property getter to
         // construct the instance.
-        components.core.engine
+        //
+        // Start a speculative Gecko session at process startup as early as possible. Mozilla
+        // investigated this specifically for applink startup in Bug 1807313: creating the
+        // speculative session in FenixApplication.onCreate() lets Gecko initialization overlap
+        // the later Activity/intent work instead of waiting until IntentReceiverActivity.onCreate().
+        // The existing IntentReceiverActivity PWA prewarm remains as a fallback for private PWAs.
+        components.core.engine.also {
+            it.speculativeCreateSession(private = false)
+        }
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then
