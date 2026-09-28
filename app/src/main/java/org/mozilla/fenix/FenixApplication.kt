@@ -113,6 +113,7 @@ import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.startMetricsIfEnabled
 import org.mozilla.fenix.experiments.maybeFetchExperiments
 import org.mozilla.fenix.ext.application
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.isCustomEngine
@@ -169,6 +170,12 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private val logger = Logger("FenixApplication")
+
+    // WebExtensionSupport is deliberately initialized after the first Activity is visible.
+    // Gecko/uBO startup is allowed to proceed from Application.onCreate without adding the
+    // Android Components extension-registration work to the PWA cold-launch critical path.
+    @Volatile
+    private var webExtensionSupportInitialized = false
 
     open val components by lazy { Components(this) }
 
@@ -339,14 +346,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Here we access the engine property, which will cause the lazy property getter to
         // construct the instance.
         //
-        // Register WebExtensionSupport before creating the speculative Gecko session. This
-        // allows the WebExtension runtime (including uBlock Origin) to start its cold-start
-        // work while Gecko is being prewarmed instead of serializing the two startup costs.
-        initializeWebExtensionSupport()
-
-        // Register WebExtensionSupport before Gecko prewarm so uBlock Origin can initialize
-        // in parallel with Gecko's cold-start work rather than serializing the two costs.
-        initializeWebExtensionSupport()
+        // Do not initialize WebExtensionSupport here. The uBO extension itself is managed by
+        // Gecko and can begin its startup work independently. Deferring the Android Components
+        // registration layer until the first Activity is resumed keeps PWA launch off that path.
 
         // Start a speculative Gecko session at process startup as early as possible. Mozilla
         // investigated this specifically for applink startup in Bug 1807313: creating the
@@ -865,6 +867,19 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
+    internal fun initializeWebExtensionSupportIfNeeded() {
+        if (webExtensionSupportInitialized) return
+
+        try {
+            IceravenDebugTrace.log("WEBEXT_SUPPORT_INIT_START")
+            initializeWebExtensionSupport()
+            webExtensionSupportInitialized = true
+            IceravenDebugTrace.log("WEBEXT_SUPPORT_INIT_RETURN")
+        } catch (e: Throwable) {
+            IceravenDebugTrace.error("WEBEXT_SUPPORT_INIT_ERROR", e)
+        }
+    }
+
     private fun initializeWebExtensionSupport() {
         try {
             GlobalAddonDependencyProvider.initialize(
@@ -893,6 +908,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     components.useCases.tabsUseCases.selectTab(sessionId)
                 },
                 onExtensionsLoaded = { extensions ->
+                    IceravenDebugTrace.log(
+                        "WEBEXT_EXTENSIONS_LOADED",
+                        "count" to extensions.size,
+                        "ids" to extensions.joinToString(",") { it.id },
+                    )
                     components.addonUpdater.registerForFutureUpdates(extensions)
                     subscribeForNewAddonsIfNeeded(components.supportedAddonsChecker, extensions)
                 },
