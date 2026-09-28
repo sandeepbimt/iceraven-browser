@@ -15,7 +15,6 @@ import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.components.browser.state.state.SessionState
-import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.customtabs.CustomTabWindowFeature
@@ -50,24 +49,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
     private val customTabColorsBinding = ViewBoundFeatureWrapper<CustomTabColorsBinding>()
     private val windowFeature = ViewBoundFeatureWrapper<CustomTabWindowFeature>()
-
-    // Gecko is the source of truth for navigation history. BrowserStore's
-    // canGoBack can be stale for standalone web apps, so track the engine's
-    // navigation-state callback directly for Android Back handling.
-    @Volatile
-    private var standaloneWebAppCanGoBack = false
-
-    private val standaloneWebAppNavigationObserver = object : EngineSession.Observer {
-        override fun onNavigationStateChange(canGoBack: Boolean?, canGoForward: Boolean?) {
-            canGoBack?.let { standaloneWebAppCanGoBack = it }
-            IceravenDebugTrace.log(
-                "PWA_NAV_STATE",
-                "canGoBack" to canGoBack,
-                "canGoForward" to canGoForward,
-                "sessionId" to customTabSessionId,
-            )
-        }
-    }
 
     @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
@@ -224,59 +205,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 }
             }
         }
-    }
-
-    override fun onBackPressed(): Boolean {
-        val customTabSession = customTabSessionId?.let {
-            requireComponents.core.store.state.findCustomTab(it)
-        }
-        val isStandaloneWebApp =
-            customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
-                args.webAppManifestUrl.isNullOrEmpty()
-
-        IceravenDebugTrace.log(
-            "PWA_BACK_ENTER",
-            "isStandalone" to isStandaloneWebApp,
-            "sessionId" to customTabSession?.id,
-            "url" to customTabSession?.content?.url,
-            "contentCanGoBack" to customTabSession?.content?.canGoBack,
-            "engineCanGoBack" to standaloneWebAppCanGoBack,
-            "engineSessionPresent" to (customTabSession?.engineState?.engineSession != null),
-            "activityFinishing" to requireActivity().isFinishing,
-        )
-
-        if (isStandaloneWebApp) {
-            // Use the same BrowserStore/session use case as normal browser Back. Directly
-            // calling EngineSession.goBack bypasses the store/presenter path and can leave
-            // the standalone PWA with a blank rendered view after navigating back.
-            if (standaloneWebAppCanGoBack) {
-                IceravenDebugTrace.log(
-                    "PWA_BACK_DISPATCH",
-                    "sessionId" to customTabSession.id,
-                    "urlBefore" to customTabSession.content.url,
-                )
-                requireComponents.useCases.sessionUseCases.goBack(
-                    tabId = customTabSession.id,
-                    userInteraction = true,
-                )
-                IceravenDebugTrace.log(
-                    "PWA_BACK_HANDLED",
-                    "mode" to "goBackUseCase",
-                    "sessionId" to customTabSession.id,
-                )
-                return true
-            }
-
-            IceravenDebugTrace.log(
-                "PWA_BACK_EXIT",
-                "sessionId" to customTabSession.id,
-                "reason" to "noHistory",
-            )
-            requireActivity().finishAndRemoveTask()
-            return true
-        }
-
-        return super.onBackPressed()
     }
 
     override fun onResume() {
