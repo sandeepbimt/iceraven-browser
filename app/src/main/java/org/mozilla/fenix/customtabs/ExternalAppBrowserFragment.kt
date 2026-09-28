@@ -95,15 +95,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
         val customTabSession = (tab as? CustomTabSessionState)
 
-        if (customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
-            args.webAppManifestUrl.isNullOrEmpty()
-        ) {
-            standaloneWebAppCanGoBack = customTabSession.content.canGoBack
-            customTabSession.engineState.engineSession?.register(
-                standaloneWebAppNavigationObserver,
-                viewLifecycleOwner,
-            )
-        }
         val isPwaTabOrTwaTab =
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP ||
                 customTabSession?.config?.externalAppType == ExternalAppType.TRUSTED_WEB_ACTIVITY
