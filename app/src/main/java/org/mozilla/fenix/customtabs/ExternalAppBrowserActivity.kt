@@ -8,7 +8,6 @@ import android.app.assist.AssistContent
 import android.os.Bundle
 import android.view.MotionEvent
 import androidx.annotation.VisibleForTesting
-import androidx.activity.OnBackPressedCallback
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import mozilla.components.browser.state.selector.findCustomTab
@@ -31,8 +30,6 @@ const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_S
 open class ExternalAppBrowserActivity : HomeActivity() {
     private var isFinishedAnimating = false
 
-    private var standaloneBackCallback: OnBackPressedCallback? = null
-
     override fun onResume() {
         super.onResume()
 
@@ -44,22 +41,6 @@ open class ExternalAppBrowserActivity : HomeActivity() {
             // end up with multiple browsers (causing "display already acquired" crashes).
             finishAndRemoveTask()
             return
-        }
-
-        // HomeActivity installs its normal Back callback during onCreate. This activity reaches
-        // onResume after that registration, so registering here gives standalone Fennec web-app
-        // launches a higher-priority AndroidX Back callback without overriding HomeActivity.onCreate.
-        if (
-            intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP &&
-            standaloneBackCallback == null
-        ) {
-            standaloneBackCallback =
-                object : OnBackPressedCallback(true) {
-                    override fun handleOnBackPressed() {
-                        finishAndRemoveTask()
-                    }
-                }
-            onBackPressedDispatcher.addCallback(this, standaloneBackCallback!!)
         }
     }
 
