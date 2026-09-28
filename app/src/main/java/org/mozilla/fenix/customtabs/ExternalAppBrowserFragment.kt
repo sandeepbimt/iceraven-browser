@@ -15,6 +15,7 @@ import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.customtabs.CustomTabWindowFeature
@@ -48,6 +49,18 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
     private val customTabColorsBinding = ViewBoundFeatureWrapper<CustomTabColorsBinding>()
     private val windowFeature = ViewBoundFeatureWrapper<CustomTabWindowFeature>()
+
+    // Gecko is the source of truth for navigation history. BrowserStore's
+    // canGoBack can be stale for standalone web apps, so track the engine's
+    // navigation-state callback directly for Android Back handling.
+    @Volatile
+    private var standaloneWebAppCanGoBack = false
+
+    private val standaloneWebAppNavigationObserver = object : EngineSession.Observer {
+        override fun onNavigationStateChange(canGoBack: Boolean?, canGoForward: Boolean?) {
+            canGoBack?.let { standaloneWebAppCanGoBack = it }
+        }
+    }
 
     @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
@@ -93,6 +106,16 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
         )
 
         val customTabSession = (tab as? CustomTabSessionState)
+
+        if (customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
+            args.webAppManifestUrl.isNullOrEmpty()
+        ) {
+            standaloneWebAppCanGoBack = customTabSession.content.canGoBack
+            customTabSession.engineState.engineSession?.register(
+                standaloneWebAppNavigationObserver,
+                viewLifecycleOwner,
+            )
+        }
         val isPwaTabOrTwaTab =
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP ||
                 customTabSession?.config?.externalAppType == ExternalAppType.TRUSTED_WEB_ACTIVITY
@@ -205,11 +228,11 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 args.webAppManifestUrl.isNullOrEmpty()
 
         if (isStandaloneWebApp) {
-            // Let the normal session back handler consume real web history first.
-            // The CustomTabSessionState.canGoBack flag can lag behind Gecko's
-            // navigation history, especially after navigation inside a standalone
-            // web app. Only close the dedicated PWA task when no history remains.
-            if (super.onBackPressed()) {
+            // For standalone PWAs use Gecko's navigation-state signal rather than
+            // CustomTabSessionState.content.canGoBack. This preserves web history
+            // inside the PWA and only exits the dedicated task at the true entry page.
+            if (standaloneWebAppCanGoBack) {
+                customTabSession.engineState.engineSession?.goBack(userInteraction = true)
                 return true
             }
 
