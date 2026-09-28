@@ -11,7 +11,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.StrictMode
 import androidx.annotation.VisibleForTesting
-import androidx.lifecycle.lifecycleScope
 import mozilla.components.feature.intent.ext.sanitize
 import mozilla.components.feature.pwa.intent.WebAppIntentProcessor.Companion.ACTION_VIEW_PWA
 import mozilla.components.feature.intent.processing.IntentProcessor
@@ -106,9 +105,10 @@ class IntentReceiverActivity : Activity() {
         val isPwaLaunch = intent.action == ACTION_VIEW_PWA
         if (isPwaLaunch) {
             components.core.engine.speculativeCreateSession(private = private)
-            lifecycleScope.launch {
-                (application as FenixApplication).awaitWebExtensionStartup()
-                processIntentAfterPwaReadiness(intent, private)
+            (application as FenixApplication).whenWebExtensionStartupReady {
+                if (!isFinishing) {
+                    processIntentAfterPwaReadiness(intent, private)
+                }
             }
             return
         }
