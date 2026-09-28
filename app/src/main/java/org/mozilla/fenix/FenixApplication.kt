@@ -186,8 +186,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     protected val ioDispatcher = Dispatchers.IO
 
     override fun onCreate() {
+        IceravenDebugTrace.log("APP_ON_CREATE")
         super.onCreate()
         initializeFenixProcess()
+        IceravenDebugTrace.log("APP_ON_CREATE_COMPLETE")
     }
 
     override fun attachBaseContext(base: Context) {
@@ -355,7 +357,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // speculative session in FenixApplication.onCreate() lets Gecko initialization overlap
         // the later Activity/intent work instead of waiting until IntentReceiverActivity.onCreate().
         // The existing IntentReceiverActivity PWA prewarm remains as a fallback for private PWAs.
+        IceravenDebugTrace.log("GECKO_PREWARM_START")
         components.core.engine.speculativeCreateSession(private = false)
+        IceravenDebugTrace.log("GECKO_PREWARM_RETURN")
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then
