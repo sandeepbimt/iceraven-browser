@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.StrictMode
 import androidx.annotation.VisibleForTesting
 import mozilla.components.feature.intent.ext.sanitize
+import mozilla.components.feature.pwa.intent.WebAppIntentProcessor.Companion.ACTION_VIEW_PWA
 import mozilla.components.feature.intent.processing.IntentProcessor
 import mozilla.components.feature.intent.processing.TabIntentProcessor.Companion.EXTRA_APP_LINK_LAUNCH_TYPE
 import mozilla.components.support.base.log.logger.Logger
@@ -97,10 +98,19 @@ class IntentReceiverActivity : Activity() {
             }
         }
 
+        // PWA launches are handled synchronously by WebAppIntentProcessor. Pre-create the
+        // Gecko engine session before that processor runs so the real PWA session can consume
+        // the speculative session instead of starting Gecko only after intent processing.
+        // This overlaps Gecko startup with the manifest/session lookup on the launch path.
+        val isPwaLaunch = intent.action == ACTION_VIEW_PWA
+        if (isPwaLaunch) {
+            components.core.engine.speculativeCreateSession(private = private)
+        }
+
         val processor = getIntentProcessors(private).firstOrNull { it.process(intent) }
         val intentProcessorType = components.intentProcessors.getType(processor)
 
-        if (intentProcessorType.shouldOpenToBrowser(intent)) {
+        if (intentProcessorType.shouldOpenToBrowser(intent) && !isPwaLaunch) {
             components.core.engine.speculativeCreateSession(private = private)
         }
 
