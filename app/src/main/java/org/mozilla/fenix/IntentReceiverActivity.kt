@@ -22,6 +22,7 @@ import mozilla.components.support.utils.INTENT_TYPE_PDF
 import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import mozilla.components.support.utils.toSafeIntent
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.HomeActivity.Companion.PRIVATE_BROWSING_MODE
 import org.mozilla.fenix.components.IntentProcessorType
 import org.mozilla.fenix.components.getType
@@ -102,10 +103,22 @@ class IntentReceiverActivity : Activity() {
         // Do not serialize PWA launch behind extension initialization.
         val isPwaLaunch = intent.action == ACTION_VIEW_PWA
         if (isPwaLaunch) {
+            IceravenDebugTrace.log(
+                "PWA_INTENT_RECEIVED",
+                "url" to intent.dataString,
+                "private" to private,
+            )
             components.core.engine.speculativeCreateSession(private = private)
+            IceravenDebugTrace.log("PWA_GECKO_PREWARM_RETURN")
         }
 
         val processor = getIntentProcessors(private).firstOrNull { it.process(intent) }
+        if (isPwaLaunch) {
+            IceravenDebugTrace.log(
+                "PWA_INTENT_PROCESSED",
+                "processor" to processor?.javaClass?.simpleName,
+            )
+        }
         val intentProcessorType = components.intentProcessors.getType(processor)
 
         if (intentProcessorType.shouldOpenToBrowser(intent) && !isPwaLaunch) {
@@ -113,6 +126,7 @@ class IntentReceiverActivity : Activity() {
         }
 
         launch(intent, intentProcessorType)
+        if (isPwaLaunch) IceravenDebugTrace.log("PWA_ACTIVITY_LAUNCH_REQUESTED")
     }
 
     private fun persistUriReadPermission(uri: Uri) {
