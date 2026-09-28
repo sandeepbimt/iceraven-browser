@@ -269,7 +269,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
             IceravenDebugTrace.log(
                 "PWA_BACK_EXIT",
-                "sessionId" to customTabSession?.id,
+                "sessionId" to customTabSession.id,
                 "reason" to "noHistory",
             )
             requireActivity().finishAndRemoveTask()
