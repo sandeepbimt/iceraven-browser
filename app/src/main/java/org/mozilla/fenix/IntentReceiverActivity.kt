@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.StrictMode
 import androidx.annotation.VisibleForTesting
+import androidx.lifecycle.lifecycleScope
 import mozilla.components.feature.intent.ext.sanitize
 import mozilla.components.feature.pwa.intent.WebAppIntentProcessor.Companion.ACTION_VIEW_PWA
 import mozilla.components.feature.intent.processing.IntentProcessor
