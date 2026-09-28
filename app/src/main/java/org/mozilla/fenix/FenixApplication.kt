@@ -30,7 +30,6 @@ import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -178,14 +177,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     protected val applicationScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     protected val ioDispatcher = Dispatchers.IO
-
-    // PWA launches must not race WebExtension startup. This is completed after
-    // WebExtensionSupport has loaded the installed extensions (including uBlock Origin).
-    private val webExtensionStartupReady = CompletableDeferred<Unit>()
-
-    internal fun whenWebExtensionStartupReady(onReady: () -> Unit) {
-        webExtensionStartupReady.invokeOnCompletion { onReady() }
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -348,14 +339,17 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Here we access the engine property, which will cause the lazy property getter to
         // construct the instance.
         //
+        // Register WebExtensionSupport before creating the speculative Gecko session. This
+        // allows the WebExtension runtime (including uBlock Origin) to start its cold-start
+        // work while Gecko is being prewarmed instead of serializing the two startup costs.
+        initializeWebExtensionSupport()
+
         // Start a speculative Gecko session at process startup as early as possible. Mozilla
         // investigated this specifically for applink startup in Bug 1807313: creating the
         // speculative session in FenixApplication.onCreate() lets Gecko initialization overlap
         // the later Activity/intent work instead of waiting until IntentReceiverActivity.onCreate().
         // The existing IntentReceiverActivity PWA prewarm remains as a fallback for private PWAs.
-        components.core.engine.also {
-            it.speculativeCreateSession(private = false)
-        }
+        components.core.engine.speculativeCreateSession(private = false)
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then
@@ -378,8 +372,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
         setDayNightTheme()
         components.strictMode.enableStrictMode(true)
-
-        initializeWebExtensionSupport()
 
         // Make sure to call this function before registering a storage worker
         // (e.g. components.core.historyStorage.registerStorageMaintenanceWorker())
@@ -899,19 +891,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 onExtensionsLoaded = { extensions ->
                     components.addonUpdater.registerForFutureUpdates(extensions)
                     subscribeForNewAddonsIfNeeded(components.supportedAddonsChecker, extensions)
-
-                    // Do not let a standalone PWA navigate before the WebExtension
-                    // runtime has loaded its installed extensions. This is especially
-                    // important for uBlock Origin: its first-run/cold-start work can
-                    // otherwise race the first PWA navigation and leave the page blank.
-                    webExtensionStartupReady.complete(Unit)
                 },
                 onUpdatePermissionRequest = components.addonUpdater::onUpdatePermissionRequest,
             )
         } catch (e: UnsupportedOperationException) {
-            // Never leave a PWA launch waiting forever if WebExtensionSupport cannot
-            // initialize. The PWA can still launch without extension readiness.
-            webExtensionStartupReady.complete(Unit)
             logger.error("Failed to initialize web extension support", e)
         }
     }
