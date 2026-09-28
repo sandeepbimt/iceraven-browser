@@ -204,11 +204,13 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP &&
                 args.webAppManifestUrl.isNullOrEmpty()
 
-        // Standalone shortcuts are top-level Android tasks. Do not let the generic
-        // SessionFeature consume Back by navigating the web session history: a
-        // standalone shortcut can contain redirect/history entries that otherwise
-        // expose a blank intermediate page. Back should leave the standalone task.
         if (isStandaloneWebApp) {
+            // Keep normal browser Back behavior while the standalone page has web
+            // history. Once the entry page is reached, close the dedicated task.
+            if (customTabSession.content.canGoBack) {
+                return super.onBackPressed()
+            }
+
             requireActivity().finishAndRemoveTask()
             return true
         }
