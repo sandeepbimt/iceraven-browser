@@ -205,10 +205,12 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 args.webAppManifestUrl.isNullOrEmpty()
 
         if (isStandaloneWebApp) {
-            // Keep normal browser Back behavior while the standalone page has web
-            // history. Once the entry page is reached, close the dedicated task.
-            if (customTabSession.content.canGoBack) {
-                return super.onBackPressed()
+            // Let the normal session back handler consume real web history first.
+            // The CustomTabSessionState.canGoBack flag can lag behind Gecko's
+            // navigation history, especially after navigation inside a standalone
+            // web app. Only close the dedicated PWA task when no history remains.
+            if (super.onBackPressed()) {
+                return true
             }
 
             requireActivity().finishAndRemoveTask()
