@@ -2007,11 +2007,12 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onResume() {
-        if (customTabSessionId != null) {
-            val session = requireComponents.core.store.state.findCustomTab(customTabSessionId)
+        val sessionId = customTabSessionId
+        if (sessionId != null) {
+            val session = requireComponents.core.store.state.findCustomTab(sessionId)
             IceravenDebugTrace.log(
                 "PWA_BASE_RESUME",
-                "sessionId" to customTabSessionId,
+                "sessionId" to sessionId,
                 "sessionExists" to (session != null),
                 "url" to session?.content?.url,
                 "contentCanGoBack" to session?.content?.canGoBack,
@@ -2045,11 +2046,12 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onPause() {
-        if (customTabSessionId != null) {
+        val sessionId = customTabSessionId
+        if (sessionId != null) {
             IceravenDebugTrace.log(
                 "PWA_BASE_PAUSE",
-                "sessionId" to customTabSessionId,
-                "sessionExists" to (requireComponents.core.store.state.findCustomTab(customTabSessionId) != null),
+                "sessionId" to sessionId,
+                "sessionExists" to (requireComponents.core.store.state.findCustomTab(sessionId) != null),
                 "viewPresent" to (view != null),
             )
         }
@@ -2067,11 +2069,12 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onStop() {
-        if (customTabSessionId != null) {
-            val session = requireComponents.core.store.state.findCustomTab(customTabSessionId)
+        val sessionId = customTabSessionId
+        if (sessionId != null) {
+            val session = requireComponents.core.store.state.findCustomTab(sessionId)
             IceravenDebugTrace.log(
                 "PWA_BASE_STOP",
-                "sessionId" to customTabSessionId,
+                "sessionId" to sessionId,
                 "sessionExists" to (session != null),
                 "url" to session?.content?.url,
                 "engineSessionPresent" to (session?.engineState?.engineSession != null),
