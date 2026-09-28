@@ -30,6 +30,7 @@ import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -177,6 +178,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     protected val applicationScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     protected val ioDispatcher = Dispatchers.IO
+
+    // PWA launches must not race WebExtension startup. This is completed after
+    // WebExtensionSupport has loaded the installed extensions (including uBlock Origin).
+    private val webExtensionStartupReady = CompletableDeferred<Unit>()
+
+    internal suspend fun awaitWebExtensionStartup() {
+        webExtensionStartupReady.await()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -890,10 +899,19 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 onExtensionsLoaded = { extensions ->
                     components.addonUpdater.registerForFutureUpdates(extensions)
                     subscribeForNewAddonsIfNeeded(components.supportedAddonsChecker, extensions)
+
+                    // Do not let a standalone PWA navigate before the WebExtension
+                    // runtime has loaded its installed extensions. This is especially
+                    // important for uBlock Origin: its first-run/cold-start work can
+                    // otherwise race the first PWA navigation and leave the page blank.
+                    webExtensionStartupReady.complete(Unit)
                 },
                 onUpdatePermissionRequest = components.addonUpdater::onUpdatePermissionRequest,
             )
         } catch (e: UnsupportedOperationException) {
+            // Never leave a PWA launch waiting forever if WebExtensionSupport cannot
+            // initialize. The PWA can still launch without extension readiness.
+            webExtensionStartupReady.complete(Unit)
             logger.error("Failed to initialize web extension support", e)
         }
     }
