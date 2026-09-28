@@ -198,6 +198,33 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
         }
     }
 
+    /**
+     * Standalone PWA Back handling follows the upstream Firefox behavior:
+     * give browser history the first chance, then close the standalone task.
+     *
+     * The current 2.49 branch no longer has CustomTabsIntegration, so the
+     * equivalent is implemented against BaseBrowserFragment's SessionFeature.
+     */
+    override fun onBackPressed(): Boolean {
+        val session = customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it) }
+        val isStandalonePwa = session?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP
+
+        if (!isStandalonePwa) {
+            return super.onBackPressed()
+        }
+
+        // Bug 1970833: history must win over closing the PWA.
+        if (session.content.canGoBack) {
+            return super.onBackPressed()
+        }
+
+        // Bug 1967825: when there is no history, leave the standalone PWA task
+        // completely instead of exposing the underlying blank browser state.
+        requireComponents.useCases.tabsUseCases.removeTab(session.id)
+        requireActivity().finishAndRemoveTask()
+        return true
+    }
+
     override fun onResume() {
         super.onResume()
         IceravenDebugTrace.log(
