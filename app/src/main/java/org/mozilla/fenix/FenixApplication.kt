@@ -183,8 +183,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     // WebExtensionSupport has loaded the installed extensions (including uBlock Origin).
     private val webExtensionStartupReady = CompletableDeferred<Unit>()
 
-    internal suspend fun awaitWebExtensionStartup() {
-        webExtensionStartupReady.await()
+    internal fun whenWebExtensionStartupReady(onReady: () -> Unit) {
+        webExtensionStartupReady.invokeOnCompletion { onReady() }
     }
 
     override fun onCreate() {
