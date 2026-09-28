@@ -25,6 +25,7 @@ import org.mozilla.fenix.HomeActivity.Companion.PRIVATE_BROWSING_MODE
 import org.mozilla.fenix.components.IntentProcessorType
 import org.mozilla.fenix.components.getType
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.customtabs.FennecWebAppIntentProcessor
 import org.mozilla.fenix.ext.isIntentInternal
 import org.mozilla.fenix.perf.MarkersActivityLifecycleCallbacks
 import org.mozilla.fenix.perf.StartupTimeline
@@ -182,10 +183,15 @@ class IntentReceiverActivity : Activity() {
 }
 
 private fun Intent.stripUnwantedFlags() {
-    // Explicitly remove the new task and clear task flags (Our browser activity is a single
-    // task activity and we never want to start a second task here).
+    // The receiver is transient. For Fennec PWA launches, document-task flags must be applied
+    // only to the actual ExternalAppBrowserActivity, not to this receiver.
     flags = flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
     flags = flags and Intent.FLAG_ACTIVITY_CLEAR_TASK.inv()
+
+    if (action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP) {
+        flags = flags and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()
+        flags = flags and Intent.FLAG_ACTIVITY_NEW_DOCUMENT.inv()
+    }
 
     // IntentReceiverActivity is started with the "excludeFromRecents" flag (set in manifest). We
     // do not want to propagate this flag from the intent receiver activity to the browser.

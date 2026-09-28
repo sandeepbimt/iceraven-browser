@@ -73,8 +73,10 @@ class FennecWebAppIntentProcessor(
                 }
             intent.putSessionId(sessionId)
 
+            // The actual PWA activity, not IntentReceiverActivity, must be the root of the
+            // dedicated document task. This also covers manifest-less standalone shortcuts.
+            intent.flags = FLAG_ACTIVITY_NEW_DOCUMENT
             if (webAppManifest != null) {
-                intent.flags = FLAG_ACTIVITY_NEW_DOCUMENT
                 intent.putWebAppManifest(webAppManifest)
             }
 

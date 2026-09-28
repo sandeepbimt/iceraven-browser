@@ -56,7 +56,8 @@ internal object StandaloneWebAppShortcutInstaller {
             Intent(context, IntentReceiverActivity::class.java).apply {
                 action = FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP
                 data = uri
-                flags = Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                // The receiver is transient. The PWA processor adds NEW_DOCUMENT to the actual
+                // ExternalAppBrowserActivity launch so this shortcut does not create an intermediate task.
             }
 
         val shortcut =
