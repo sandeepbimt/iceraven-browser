@@ -344,6 +344,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // work while Gecko is being prewarmed instead of serializing the two startup costs.
         initializeWebExtensionSupport()
 
+        // Register WebExtensionSupport before Gecko prewarm so uBlock Origin can initialize
+        // in parallel with Gecko's cold-start work rather than serializing the two costs.
+        initializeWebExtensionSupport()
+
         // Start a speculative Gecko session at process startup as early as possible. Mozilla
         // investigated this specifically for applink startup in Bug 1807313: creating the
         // speculative session in FenixApplication.onCreate() lets Gecko initialization overlap
