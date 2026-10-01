@@ -1,0 +1,118 @@
+name: Sandfox IronFox Base Trial
+
+on:
+  push:
+    branches:
+      - sandfox/ironfox-base-trial
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandfox-ironfox-base-trial
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Host resource snapshot and cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== BEFORE CLEANUP ==="
+          free -h
+          df -h /
+          sudo du -xhd1 /usr/local 2>/dev/null | sort -h | tail -30 || true
+
+          # These are not needed because the Firefox build runs inside the
+          # IronFox build container. Reclaim runner disk without creating
+          # disk-backed swap.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android-sdk
+          sudo rm -rf "$RUNNER_TOOL_CACHE" || true
+          docker system prune -af || true
+
+          echo "=== AFTER CLEANUP ==="
+          free -h
+          df -h /
+
+      - name: Checkout Sandfox trial metadata only
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/workflows/sandfox-ironfox-base-trial.yml
+            docs/sandfox/IRONFOX-BASE-TRIAL.md
+          sparse-checkout-cone-mode: false
+
+      - name: Clone exact IronFox checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch dev https://github.com/ironfox-oss/IronFox.git ironfox
+          cd ironfox
+          test "$(git rev-parse HEAD)" = "ca0c9673b328fd2b23e80293326a22610239eb47"
+          echo "IronFox checkpoint verified."
+          grep -E '^readonly IRONFOX_GECKO_(COMMIT|VERSION)=' scripts/versions.sh
+
+      - name: Pull IronFox build image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull registry.gitlab.com/ironfox-oss/ironfox:latest
+          docker image inspect registry.gitlab.com/ironfox-oss/ironfox:latest             --format 'IronFox image={{.Id}} size={{.Size}} bytes'
+          echo "=== DISK AFTER IMAGE PULL ==="
+          df -h /
+
+      - name: Get and patch IronFox sources
+        shell: bash
+        working-directory: ironfox
+        run: |
+          set -euo pipefail
+          mkdir -p ../ironfox-work
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             registry.gitlab.com/ironfox-oss/ironfox:latest             /bin/bash -lc '
+              set -euo pipefail
+              chmod +x scripts/*.sh
+              ./scripts/get_sources.sh
+              ./scripts/prebuild.sh arm64
+            '
+          echo "=== DISK AFTER SOURCES/PREBUILD ==="
+          df -h /
+          du -sh ironfox 2>/dev/null || true
+          du -sh ironfox/external 2>/dev/null || true
+
+      - name: Build ARM64 APK
+        working-directory: ironfox
+        env:
+          MOZ_BUILD_CONCURRENCY: "1"
+        run: |
+          set -euo pipefail
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             -e MOZ_BUILD_CONCURRENCY=1             -e GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m"             registry.gitlab.com/ironfox-oss/ironfox:latest             /bin/bash -lc '
+              set -euo pipefail
+              ./scripts/build.sh arm64
+            '
+          echo "=== DISK AFTER BUILD ==="
+          df -h /
+
+      - name: Upload ARM64 APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandfox-ironfox-base-trial-arm64
+          path: |
+            ironfox/outputs/**/*.apk
+            ironfox/artifacts/**/*.apk
+          if-no-files-found: error
+
+      - name: Final resource snapshot
+        if: always()
+        shell: bash
+        run: |
+          echo "=== FINAL RESOURCE SNAPSHOT ==="
+          free -h || true
+          df -h / || true
