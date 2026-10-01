@@ -60,13 +60,16 @@ jobs:
           echo "IronFox checkpoint verified."
           grep -E '^readonly IRONFOX_GECKO_(COMMIT|VERSION)=' scripts/versions.sh
 
-      - name: Pull IronFox build image
+      - name: Build exact IronFox container
         shell: bash
+        working-directory: ironfox
         run: |
           set -euo pipefail
-          docker pull registry.gitlab.com/ironfox-oss/ironfox:latest
-          docker image inspect registry.gitlab.com/ironfox-oss/ironfox:latest             --format 'IronFox image={{.Id}} size={{.Size}} bytes'
-          echo "=== DISK AFTER IMAGE PULL ==="
+          # Build from the exact pinned IronFox checkpoint. Do not pair
+          # pinned source with a moving :latest container.
+          docker build --pull -t ironfox-trial:ca0c9673 .
+          docker image inspect ironfox-trial:ca0c9673 --format 'IronFox image={{.Id}} size={{.Size}} bytes'
+          echo "=== DISK AFTER IMAGE BUILD ==="
           df -h /
 
       - name: Get and patch IronFox sources
@@ -75,7 +78,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../ironfox-work
-          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             registry.gitlab.com/ironfox-oss/ironfox:latest             /bin/bash -lc '
+          CI_PIPELINE_CREATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             ironfox-trial:ca0c9673             /bin/bash -lc '
               set -euo pipefail
               chmod +x scripts/*.sh
               ./scripts/get_sources.sh
@@ -92,7 +96,8 @@ jobs:
           MOZ_BUILD_CONCURRENCY: "1"
         run: |
           set -euo pipefail
-          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             -e MOZ_BUILD_CONCURRENCY=1             -e GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m"             registry.gitlab.com/ironfox-oss/ironfox:latest             /bin/bash -lc '
+          CI_PIPELINE_CREATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             -e MOZ_BUILD_CONCURRENCY=1             -e GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m"             ironfox-trial:ca0c9673             /bin/bash -lc '
               set -euo pipefail
               ./scripts/build.sh arm64
             '
