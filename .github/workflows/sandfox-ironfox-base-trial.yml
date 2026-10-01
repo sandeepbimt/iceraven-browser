@@ -103,7 +103,8 @@ jobs:
               # The upstream CI expects a private Safe Browsing API key. This base-build
               # trial deliberately uses a local placeholder so the build can proceed
               # without introducing a secret or changing the upstream source tree.
-              printf '%s\n' 'sandfox-base-trial-placeholder' > /tmp/ironfox-sb-gapi-key.txt
+              mkdir -p /opt/IronFox
+              printf '%s\n' 'sandfox-base-trial-placeholder' > /opt/IronFox/ironfox-sb-gapi-key.txt
               git config --global --add safe.directory /app/ironfox
               ./scripts/build.sh arm64
             '
