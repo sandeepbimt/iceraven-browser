@@ -98,8 +98,13 @@ jobs:
         run: |
           set -euo pipefail
           CI_PIPELINE_CREATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             -e MOZ_BUILD_CONCURRENCY=1             -e GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m"             ironfox-trial:ca0c9673             /bin/bash -lc '
+          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             -e IRONFOX_SB_GAPI_KEY_FILE=/tmp/ironfox-sb-gapi-key.txt             -e MOZ_BUILD_CONCURRENCY=1             -e GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m"             ironfox-trial:ca0c9673             /bin/bash -lc '
               set -euo pipefail
+              # The upstream CI expects a private Safe Browsing API key. This base-build
+              # trial deliberately uses a local placeholder so the build can proceed
+              # without introducing a secret or changing the upstream source tree.
+              printf '%s\n' 'sandfox-base-trial-placeholder' > /tmp/ironfox-sb-gapi-key.txt
+              git config --global --add safe.directory /app/ironfox
               ./scripts/build.sh arm64
             '
           echo "=== DISK AFTER BUILD ==="
