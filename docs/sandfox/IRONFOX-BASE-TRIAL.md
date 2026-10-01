@@ -88,3 +88,5 @@ Therefore:
 7. Add UI/branding last.
 
 **No feature patch is allowed to be mixed into the base-build trial.**
+
+Trial trigger checkpoint: resource-feasibility build uses one ARM64 target and no disk-backed swap.
