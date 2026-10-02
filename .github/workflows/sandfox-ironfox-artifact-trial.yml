@@ -144,16 +144,16 @@ jobs:
               # IronFox Run #15 proved this build path with IRONFOX_SIGN=1. Preserve that proven path.
               # Run #15 failed only because the private CI keystore was absent, so create an
               # ephemeral trial keystore at the exact paths expected by the pinned CI environment.
-              source scripts/env_local.sh
+              test -x ./external/jdk-25/bin/keytool
               mkdir -p /opt/IronFox
               printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-keystore-pass.txt
               printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-signing-key-pass.txt
-              "${IRONFOX_JAVA_HOME}/bin/keytool" -genkeypair -noprompt \
+              ./external/jdk-25/bin/keytool -genkeypair -noprompt \
                 -alias ironfox -keyalg RSA -keysize 2048 -validity 3650 -storetype JKS \
                 -keystore /opt/IronFox/ironfox-android-keystore.jks \
                 -storepass sandfox-trial -keypass sandfox-trial \
                 -dname "CN=Sandfox Artifact Trial"
-              "${IRONFOX_JAVA_HOME}/bin/keytool" -list \
+              ./external/jdk-25/bin/keytool -list \
                 -keystore /opt/IronFox/ironfox-android-keystore.jks \
                 -storepass sandfox-trial -alias ironfox > /dev/null
               test -f /opt/IronFox/ironfox-android-keystore.jks
