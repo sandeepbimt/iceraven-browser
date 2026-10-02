@@ -55,7 +55,14 @@ class FennecWebAppIntentProcessor(
         val url = safeIntent.dataString
 
         return if (!url.isNullOrEmpty() && matches(intent)) {
-            val webAppManifest = runBlockingIncrement { loadManifest(safeIntent, url) }
+            // Sandfox standalone shortcuts intentionally do not depend on a manifest. Avoid
+            // opening ManifestStorage/Room and blocking intent processing on every cold PWA launch.
+            val webAppManifest =
+                if (safeIntent.getBooleanExtra(EXTRA_SANDFOX_STANDALONE, false)) {
+                    null
+                } else {
+                    runBlockingIncrement { loadManifest(safeIntent, url) }
+                }
             val sessionId =
                 if (webAppManifest != null) {
                     useCases.addWebApp(
@@ -155,5 +162,6 @@ class FennecWebAppIntentProcessor(
     companion object {
         const val ACTION_FENNEC_WEBAPP = "org.mozilla.gecko.WEBAPP"
         const val EXTRA_FENNEC_MANIFEST_PATH = "MANIFEST_PATH"
+        const val EXTRA_SANDFOX_STANDALONE = "org.mozilla.fenix.EXTRA_SANDFOX_STANDALONE"
     }
 }
