@@ -1,0 +1,48 @@
+name: Cobalt Dummy Trial
+
+on:
+  push:
+    branches:
+      - cobalt/dummy-trial
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  cobalt-shell-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout trial repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Cobalt nightly
+        uses: actions/checkout@v4
+        with:
+          repository: AurielSolaris/Cobalt
+          ref: nightly
+          path: cobalt
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Build Cobalt Android shell
+        working-directory: cobalt
+        run: ./gradlew :modules:app:assembleDebug --no-daemon --stacktrace
+
+      - name: Locate APK
+        working-directory: cobalt
+        run: |
+          find modules/app/build/outputs/apk -type f -name '*.apk' -print
+
+      - name: Upload Cobalt dummy APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobalt-dummy-apk
+          path: cobalt/modules/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
