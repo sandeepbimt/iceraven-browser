@@ -1,0 +1,63 @@
+name: Sandfox launch crash diagnostic
+
+on:
+  push:
+    branches:
+      - sandfox/diagnose-launch-crash
+
+jobs:
+  launch-test:
+    name: Install and launch Sandfox APK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download known-good Sandfox APK artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: sandfox-x86_64
+          path: apk
+          github-token: ${{ github.token }}
+          repository: sandeepbimt/iceraven-browser
+          run-id: 37034943982
+
+      - name: Show APK
+        run: ls -lh apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch APK on Android 16 emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: Pixel 6
+          ram-size: 3G
+          disk-size: 8G
+          force-avd-creation: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euxo pipefail
+            APK="$(find apk -name '*.apk' -type f | head -1)"
+            adb logcat -c
+            adb install -r "$APK"
+            adb shell monkey -p io.github.forkmaintainers.iceraven 1
+            sleep 15
+            adb shell pidof io.github.forkmaintainers.iceraven || true
+            adb logcat -d > logcat.txt
+            echo "=== FATAL EXCEPTIONS ==="
+            grep -n -A40 -B10 "FATAL EXCEPTION\|AndroidRuntime\|Fatal signal" logcat.txt || true
+            echo "=== PACKAGE PROCESS ==="
+            adb shell pidof io.github.forkmaintainers.iceraven || true
+
+      - name: Upload launch log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandfox-launch-log
+          path: logcat.txt
+          if-no-files-found: ignore
