@@ -166,24 +166,29 @@ jobs:
               test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
               test -f external/gecko/mach
 
-              # IronFox Run #15 proved this build path with IRONFOX_SIGN=1. Preserve that proven path.
-              # Run #15 failed only because the private CI keystore was absent, so create an
-              # ephemeral trial keystore at the exact paths expected by the pinned CI environment.
-              test -x ./external/jdk-25/bin/keytool
-              mkdir -p /opt/IronFox
-              printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-keystore-pass.txt
-              printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-signing-key-pass.txt
-              ./external/jdk-25/bin/keytool -genkeypair -noprompt \
-                -alias ironfox -keyalg RSA -keysize 2048 -validity 3650 -storetype JKS \
-                -keystore /opt/IronFox/ironfox-android-keystore.jks \
-                -storepass sandfox-trial -keypass sandfox-trial \
-                -dname "CN=Sandfox Artifact Trial"
-              ./external/jdk-25/bin/keytool -list -storetype JKS \
-                -keystore /opt/IronFox/ironfox-android-keystore.jks \
-                -storepass sandfox-trial -alias ironfox > /dev/null
-              test -f /opt/IronFox/ironfox-android-keystore.jks
-              test "$(cat /opt/IronFox/ironfox-android-keystore-pass.txt)" = "sandfox-trial"
-              test "$(cat /opt/IronFox/ironfox-android-signing-key-pass.txt)" = "sandfox-trial"
+              # This trial proves the base ARM64 browser build and artifact export.
+              # Run #15 already proved APK creation. Disable IronFox CI signing in the
+              # workspace copy of env_ci.sh so build.sh does not require the private
+              # production keystore.
+              python3 - <<'PY'
+              from pathlib import Path
+              p = Path("scripts/env_ci.sh")
+              s = p.read_text()
+              replacements = {
+                  "export IRONFOX_ANDROID_KEYSTORE='/opt/IronFox/ironfox-android-keystore.jks'": "export IRONFOX_ANDROID_KEYSTORE='null'",
+                  "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='ironfox'": "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'",
+                  "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='/opt/IronFox/ironfox-android-signing-key-pass.txt'": "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'",
+                  "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='/opt/IronFox/ironfox-android-keystore-pass.txt'": "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'",
+              }
+              for old, new in replacements.items():
+                  assert s.count(old) == 1, f"expected exactly one occurrence of: {old}"
+                  s = s.replace(old, new, 1)
+              p.write_text(s)
+              PY
+              grep -F "export IRONFOX_ANDROID_KEYSTORE='null'" scripts/env_ci.sh
+              grep -F "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'" scripts/env_ci.sh
+              grep -F "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'" scripts/env_ci.sh
+              grep -F "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'" scripts/env_ci.sh
 
               if ! bash -x ./scripts/build.sh arm64; then
                 echo "=== BUILD FAILURE LOG ==="
