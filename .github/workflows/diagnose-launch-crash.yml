@@ -10,6 +10,13 @@ jobs:
     name: Install and launch Sandfox APK
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout diagnostic script
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/scripts/sandfox-launch-test.sh
+          sparse-checkout-cone-mode: false
+
       - name: Download known-good Sandfox APK artifact
         uses: actions/download-artifact@v5
         with:
