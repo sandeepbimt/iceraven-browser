@@ -47,8 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch dev https://github.com/ironfox-oss/IronFox.git ironfox
+          git clone --depth 1 https://github.com/ironfox-oss/IronFox.git ironfox
           cd ironfox
+          git fetch --depth 1 origin ca0c9673b328fd2b23e80293326a22610239eb47
+          git checkout --detach ca0c9673b328fd2b23e80293326a22610239eb47
           test "$(git rev-parse HEAD)" = "ca0c9673b328fd2b23e80293326a22610239eb47"
           echo "IronFox checkpoint verified."
           grep -E '^readonly IRONFOX_GECKO_(COMMIT|VERSION)=' scripts/versions.sh
