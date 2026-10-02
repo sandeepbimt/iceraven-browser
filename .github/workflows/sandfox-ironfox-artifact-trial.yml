@@ -140,6 +140,23 @@ jobs:
               git -C external/gecko reset --mixed fdd757a2e09c9471cddf383e64e631e4ce178499
               test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
               test -n "$(git -C external/gecko status --short)"
+
+              # IronFox CI sets private release-signing paths unconditionally when IRONFOX_CI=1.
+              # This trial has no IronFox signing secrets; force its derived signing inputs to null
+              # so the already-proven ARM64 build exports the unsigned APK instead of failing after build.
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE='/opt/IronFox/ironfox-android-keystore.jks'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='ironfox'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='/opt/IronFox/ironfox-android-signing-key-pass.txt'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='/opt/IronFox/ironfox-android-keystore-pass.txt'" scripts/env_ci.sh)" = "1"
+              sed -i "s|export IRONFOX_ANDROID_KEYSTORE='/opt/IronFox/ironfox-android-keystore.jks'|export IRONFOX_ANDROID_KEYSTORE='null'|" scripts/env_ci.sh
+              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='ironfox'|export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'|" scripts/env_ci.sh
+              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='/opt/IronFox/ironfox-android-signing-key-pass.txt'|export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'|" scripts/env_ci.sh
+              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='/opt/IronFox/ironfox-android-keystore-pass.txt'|export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'|" scripts/env_ci.sh
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE='null'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'" scripts/env_ci.sh)" = "1"
+              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'" scripts/env_ci.sh)" = "1"
+
               ./scripts/build.sh arm64
             '
           echo "=== DISK AFTER BUILD ==="
