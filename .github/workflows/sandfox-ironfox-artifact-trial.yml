@@ -103,46 +103,6 @@ jobs:
           PY
 
           ./scripts/get_sources.sh
-
-          # Diagnostic-only change: enable Gecko artifact builds at this checkpoint.
-          test "$(grep -Fc "ac_add_options --disable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "1"
-          test "$(grep -Fc "export MOZ_ARTIFACT_BUILDS=" configs/mozconfigs/core.mozconfig)" = "1"
-          sed -i "/ac_add_options --disable-artifact-builds/d" configs/mozconfigs/core.mozconfig
-          sed -i "/export MOZ_ARTIFACT_BUILDS=/d" configs/mozconfigs/core.mozconfig
-          printf '%s\n' 'ac_add_options --enable-artifact-builds' >> configs/mozconfigs/core.mozconfig
-          printf '%s\n' 'export MOZ_ARTIFACT_BUILDS=1' >> configs/mozconfigs/core.mozconfig
-          test "$(grep -Fc "ac_add_options --enable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "1"
-          test "$(grep -Fc 'imply_option("--enable-artifact-builds", False)' patches/gecko-overlay/ironfox/ironfox.configure)" = "1"
-          sed -i 's/imply_option("--enable-artifact-builds", False)/imply_option("--enable-artifact-builds", True)/' patches/gecko-overlay/ironfox/ironfox.configure
-          grep -F 'imply_option("--enable-artifact-builds", True)' patches/gecko-overlay/ironfox/ironfox.configure
-          test "$(grep -Fc "ac_add_options --disable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "0"
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("configs/mozconfigs/ironfox.mozconfig")
-          s = p.read_text()
-          old = 'if [[ "${IRONFOX_MACH_BUILD}" == 1 ]]; then'
-          new = 'if [[ "${IRONFOX_MACH_BUILD}" == 1 ]] && [[ "${MOZ_ARTIFACT_BUILDS:-}" != 1 ]]; then'
-          assert s.count(old) == 1, f"expected exactly one build-mozconfig selector, found {s.count(old)}"
-          p.write_text(s.replace(old, new, 1))
-          s = p.read_text()
-          assert s.count(new) == 1, "artifact selector replacement was not applied exactly once"
-          print("SUCCESS: artifact mode selects no-build.mozconfig")
-          PY
-
-          # Artifact mode requires live Mozilla Taskcluster. IronFox normally points
-          # Taskcluster at noop.invalid to prevent Mozilla artifact/prebuild downloads.
-          # This trial explicitly opts into Mozilla Gecko artifact retrieval.
-          test "$(grep -Fc "readonly TASKCLUSTER_PROXY_URL='https://noop.invalid'" scripts/env_external.sh)" = "1"
-          test "$(grep -Fc "readonly TASKCLUSTER_ROOT_URL='https://noop.invalid'" scripts/env_external.sh)" = "1"
-          sed -i "s|readonly TASKCLUSTER_PROXY_URL='https://noop.invalid'|readonly TASKCLUSTER_PROXY_URL='https://firefox-ci-tc.services.mozilla.com'|" scripts/env_external.sh
-          sed -i "s|readonly TASKCLUSTER_ROOT_URL='https://noop.invalid'|readonly TASKCLUSTER_ROOT_URL='https://firefox-ci-tc.services.mozilla.com'|" scripts/env_external.sh
-          test "$(grep -Fc "readonly TASKCLUSTER_PROXY_URL='https://firefox-ci-tc.services.mozilla.com'" scripts/env_external.sh)" = "1"
-          test "$(grep -Fc "readonly TASKCLUSTER_ROOT_URL='https://firefox-ci-tc.services.mozilla.com'" scripts/env_external.sh)" = "1"
-
-          # Artifact mode has no compile environment. The normal IronFox Gecko path
-          # selects build.mozconfig, whose compiler/toolchain options are unavailable.
-          # Select no-build.mozconfig for this artifact-only trial instead.
-
           git config --global --add safe.directory /app/ironfox
           ./scripts/prebuild.sh all
           CONTAINER_SCRIPT
