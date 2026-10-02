@@ -41,11 +41,12 @@ jobs:
           ram-size: 3G
           disk-size: 8G
           force-avd-creation: true
+          working-directory: ${{ github.workspace }}
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
             set -eu
-            APK="/tmp/sandfox.apk"
+            APK="apk/app-x86_64-forkRelease.apk"
             test -f "$APK"
             adb logcat -c
             adb install -r "$APK"
