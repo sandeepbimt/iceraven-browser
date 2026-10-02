@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - sandfox/aerium-poc
+  pull_request:
+    branches:
+      - iceraven
   workflow_dispatch:
 
 permissions:
@@ -39,10 +42,10 @@ jobs:
             -alias aerium-poc -keyalg RSA -keysize 2048 \
             -validity 10000 -dname 'CN=Aerium POC' >/dev/null
           cat > /tmp/local.properties <<'EOF'
-          storePassword=changeit
-          keyPassword=changeit
-          keyAlias=aerium-poc
-          EOF
+storePassword=changeit
+keyPassword=changeit
+keyAlias=aerium-poc
+EOF
           echo "LOCAL_TEST_JKS=$(base64 -w0 /tmp/local.properties)" >> "$GITHUB_ENV"
           echo "STORE_TEST_JKS=$(base64 -w0 /tmp/aerium-poc.jks)" >> "$GITHUB_ENV"
 
