@@ -1,0 +1,58 @@
+name: Aerium POC
+
+on:
+  push:
+    branches:
+      - sandfox/aerium-poc
+  pull_request:
+    branches:
+      - iceraven
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: aerium-poc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    outputs:
+      finished: ${{ steps.stage.outputs.finished }}
+      deterministic: ${{ steps.stage.outputs.deterministic }}
+    steps:
+      - name: Checkout Aerium
+        uses: actions/checkout@v5
+        with:
+          repository: aerium-browser/aerium-browser-android
+          ref: main
+          submodules: true
+
+      - name: Create ephemeral POC signing key
+        shell: bash
+        run: |
+          set -e
+          keytool -genkeypair -noprompt \
+            -keystore /tmp/aerium-poc.jks \
+            -storepass changeit -keypass changeit \
+            -alias aerium-poc -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname 'CN=Aerium POC' >/dev/null
+          cat > /tmp/local.properties <<'EOF'
+storePassword=changeit
+keyPassword=changeit
+keyAlias=aerium-poc
+EOF
+          echo "LOCAL_TEST_JKS=$(base64 -w0 /tmp/local.properties)" >> "$GITHUB_ENV"
+          echo "STORE_TEST_JKS=$(base64 -w0 /tmp/aerium-poc.jks)" >> "$GITHUB_ENV"
+
+      - name: Aerium Stage 1
+        id: stage
+        uses: ./.github/actions/stage
+        with:
+          finished: 'false'
+          from_artifact: 'never'
+          arch: arm64
