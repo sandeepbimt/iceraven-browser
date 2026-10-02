@@ -185,7 +185,7 @@ jobs:
               test "$(cat /opt/IronFox/ironfox-android-keystore-pass.txt)" = "sandfox-trial"
               test "$(cat /opt/IronFox/ironfox-android-signing-key-pass.txt)" = "sandfox-trial"
 
-              if ! ./scripts/build.sh arm64; then
+              if ! bash -x ./scripts/build.sh arm64; then
                 echo "=== BUILD FAILURE LOG ==="
                 if [ -f artifacts/logs/build-arm64.log ]; then
                   tail -n 400 artifacts/logs/build-arm64.log
