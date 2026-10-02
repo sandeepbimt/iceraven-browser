@@ -73,6 +73,35 @@ jobs:
           cat > "$RUNNER_TEMP/ironfox-artifact-trial.sh" <<'CONTAINER_SCRIPT'
           set -euo pipefail
           chmod +x scripts/*.sh
+
+          # GitHub codeload returned HTTP 502 and then HTTP 429 for the pinned Gecko
+          # archive. Acquire the exact same Gecko commit through Git instead, then make
+          # IronFox skip only its redundant codeload download.
+          test ! -e external/gecko
+          mkdir -p external/gecko
+          git init external/gecko
+          git -C external/gecko remote add origin https://github.com/mozilla-firefox/firefox.git
+          git -C external/gecko fetch --depth 1 origin fdd757a2e09c9471cddf383e64e631e4ce178499
+          git -C external/gecko checkout --detach FETCH_HEAD
+          test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
+          test -f external/gecko/mach
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/get_sources-if.sh")
+          s = p.read_text()
+          old = '  download_and_extract "https://github.com/mozilla-firefox/firefox/archive/__COMMIT__.tar.gz" "__GECKO__" "__SHA__"'
+          new = '''  if [[ -f "__GECKO__/mach" ]] && [[ "$(git -C "__GECKO__" rev-parse HEAD 2>/dev/null)" == "__COMMIT__" ]]; then
+            echo_green_text "SUCCESS: Using pre-populated Firefox source at path: '__GECKO__'!"
+            return 0
+          fi
+          download_and_extract "https://github.com/mozilla-firefox/firefox/archive/__COMMIT__.tar.gz" "__GECKO__" "__SHA__"'''
+          old = old.replace("__COMMIT__", "$"+"{IRONFOX_GECKO_COMMIT}").replace("__GECKO__", "$"+"{IRONFOX_GECKO}").replace("__SHA__", "$"+"{IRONFOX_GECKO_SHA512SUM}")
+          new = new.replace("__COMMIT__", "$"+"{IRONFOX_GECKO_COMMIT}").replace("__GECKO__", "$"+"{IRONFOX_GECKO}").replace("__SHA__", "$"+"{IRONFOX_GECKO_SHA512SUM}")
+          assert s.count(old) == 1, f"expected one Gecko archive call, found {s.count(old)}"
+          p.write_text(s.replace(old, new, 1))
+          PY
+
           ./scripts/get_sources.sh
 
           # Diagnostic-only change: enable Gecko artifact builds at this checkpoint.
@@ -134,12 +163,8 @@ jobs:
               mkdir -p /opt/IronFox
               printf "%s\n" "sandfox-artifact-trial-placeholder" > /opt/IronFox/ironfox-sb-gapi-key.txt
               git config --global --add safe.directory /app/ironfox
-              git -C external/gecko init
-              git -C external/gecko remote add origin https://github.com/mozilla-firefox/firefox.git
-              git -C external/gecko fetch --depth 1 origin fdd757a2e09c9471cddf383e64e631e4ce178499
-              git -C external/gecko reset --mixed fdd757a2e09c9471cddf383e64e631e4ce178499
               test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
-              test -n "$(git -C external/gecko status --short)"
+              test -f external/gecko/mach
 
               # IronFox Run #15 proved this build path with IRONFOX_SIGN=1. Preserve that proven path.
               # Run #15 failed only because the private CI keystore was absent, so create an
