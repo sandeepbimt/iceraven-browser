@@ -141,21 +141,24 @@ jobs:
               test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
               test -n "$(git -C external/gecko status --short)"
 
-              # IronFox CI sets private release-signing paths unconditionally when IRONFOX_CI=1.
-              # This trial has no IronFox signing secrets; force its derived signing inputs to null
-              # so the already-proven ARM64 build exports the unsigned APK instead of failing after build.
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE='/opt/IronFox/ironfox-android-keystore.jks'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='ironfox'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='/opt/IronFox/ironfox-android-signing-key-pass.txt'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='/opt/IronFox/ironfox-android-keystore-pass.txt'" scripts/env_ci.sh)" = "1"
-              sed -i "s|export IRONFOX_ANDROID_KEYSTORE='/opt/IronFox/ironfox-android-keystore.jks'|export IRONFOX_ANDROID_KEYSTORE='null'|" scripts/env_ci.sh
-              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='ironfox'|export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'|" scripts/env_ci.sh
-              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='/opt/IronFox/ironfox-android-signing-key-pass.txt'|export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'|" scripts/env_ci.sh
-              sed -i "s|export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='/opt/IronFox/ironfox-android-keystore-pass.txt'|export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'|" scripts/env_ci.sh
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE='null'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_ALIAS='null'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_KEY_PASS_FILE='null'" scripts/env_ci.sh)" = "1"
-              test "$(grep -Fc "export IRONFOX_ANDROID_KEYSTORE_PASS_FILE='null'" scripts/env_ci.sh)" = "1"
+              # IronFox Run #15 proved this build path with IRONFOX_SIGN=1. Preserve that proven path.
+              # Run #15 failed only because the private CI keystore was absent, so create an
+              # ephemeral trial keystore at the exact paths expected by the pinned CI environment.
+              source scripts/env.sh
+              mkdir -p /opt/IronFox
+              printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-keystore-pass.txt
+              printf '%s\n' 'sandfox-trial' > /opt/IronFox/ironfox-android-signing-key-pass.txt
+              "${IRONFOX_JAVA_HOME}/bin/keytool" -genkeypair -noprompt \
+                -alias ironfox -keyalg RSA -keysize 2048 -validity 3650 -storetype JKS \
+                -keystore /opt/IronFox/ironfox-android-keystore.jks \
+                -storepass sandfox-trial -keypass sandfox-trial \
+                -dname "CN=Sandfox Artifact Trial"
+              "${IRONFOX_JAVA_HOME}/bin/keytool" -list \
+                -keystore /opt/IronFox/ironfox-android-keystore.jks \
+                -storepass sandfox-trial -alias ironfox > /dev/null
+              test -f /opt/IronFox/ironfox-android-keystore.jks
+              test "$(cat /opt/IronFox/ironfox-android-keystore-pass.txt)" = "sandfox-trial"
+              test "$(cat /opt/IronFox/ironfox-android-signing-key-pass.txt)" = "sandfox-trial"
 
               ./scripts/build.sh arm64
             '
