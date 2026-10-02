@@ -21,7 +21,7 @@ jobs:
 
       - name: Run Sandfox on Android emulator
         id: emulator
-        uses: SweetRainGarden/SrgGactionEmulatorenvsetupAndroid@main
+        uses: SweetRainGarden/SrgGactionEmulatorenvsetupAndroid@develop
         with:
           apk-path: ${{ github.workspace }}/apk/app-x86_64-forkRelease.apk
           run-script-path: .github/scripts/sandfox-launch-test.sh
