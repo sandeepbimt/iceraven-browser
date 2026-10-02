@@ -34,7 +34,7 @@ jobs:
           api-level: 36
           target: google_apis
           arch: x86_64
-          profile: Pixel 6
+          profile: Nexus 6
           ram-size: 3G
           disk-size: 8G
           force-avd-creation: true
