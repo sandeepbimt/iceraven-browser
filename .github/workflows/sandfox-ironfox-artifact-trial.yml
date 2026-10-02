@@ -153,7 +153,7 @@ jobs:
                 -keystore /opt/IronFox/ironfox-android-keystore.jks \
                 -storepass sandfox-trial -keypass sandfox-trial \
                 -dname "CN=Sandfox Artifact Trial"
-              ./external/jdk-25/bin/keytool -list \
+              ./external/jdk-25/bin/keytool -list -storetype JKS \
                 -keystore /opt/IronFox/ironfox-android-keystore.jks \
                 -storepass sandfox-trial -alias ironfox > /dev/null
               test -f /opt/IronFox/ironfox-android-keystore.jks
