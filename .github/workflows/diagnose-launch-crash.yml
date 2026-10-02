@@ -19,8 +19,11 @@ jobs:
           repository: sandeepbimt/iceraven-browser
           run-id: 37034943982
 
-      - name: Show APK
-        run: ls -lh apk
+      - name: Stage APK for emulator
+        run: |
+          ls -lh apk
+          cp apk/app-x86_64-forkRelease.apk /tmp/sandfox.apk
+          ls -lh /tmp/sandfox.apk
 
       - name: Enable KVM
         run: |
@@ -42,7 +45,7 @@ jobs:
           disable-animations: true
           script: |
             set -eu
-            APK="$GITHUB_WORKSPACE/apk/app-x86_64-forkRelease.apk"
+            APK="/tmp/sandfox.apk"
             test -f "$APK"
             adb logcat -c
             adb install -r "$APK"
