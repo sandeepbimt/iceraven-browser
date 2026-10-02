@@ -100,6 +100,16 @@ jobs:
           print("SUCCESS: artifact mode selects no-build.mozconfig")
           PY
 
+          # Artifact mode requires live Mozilla Taskcluster. IronFox normally points
+          # Taskcluster at noop.invalid to prevent Mozilla artifact/prebuild downloads.
+          # This trial explicitly opts into Mozilla Gecko artifact retrieval.
+          test "$(grep -Fc "readonly TASKCLUSTER_PROXY_URL='https://noop.invalid'" scripts/env_external.sh)" = "1"
+          test "$(grep -Fc "readonly TASKCLUSTER_ROOT_URL='https://noop.invalid'" scripts/env_external.sh)" = "1"
+          sed -i "s|readonly TASKCLUSTER_PROXY_URL='https://noop.invalid'|readonly TASKCLUSTER_PROXY_URL='https://firefox-ci-tc.services.mozilla.com'|" scripts/env_external.sh
+          sed -i "s|readonly TASKCLUSTER_ROOT_URL='https://noop.invalid'|readonly TASKCLUSTER_ROOT_URL='https://firefox-ci-tc.services.mozilla.com'|" scripts/env_external.sh
+          test "$(grep -Fc "readonly TASKCLUSTER_PROXY_URL='https://firefox-ci-tc.services.mozilla.com'" scripts/env_external.sh)" = "1"
+          test "$(grep -Fc "readonly TASKCLUSTER_ROOT_URL='https://firefox-ci-tc.services.mozilla.com'" scripts/env_external.sh)" = "1"
+
           # Artifact mode has no compile environment. The normal IronFox Gecko path
           # selects build.mozconfig, whose compiler/toolchain options are unavailable.
           # Select no-build.mozconfig for this artifact-only trial instead.
