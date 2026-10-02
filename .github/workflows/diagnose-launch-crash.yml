@@ -9,8 +9,6 @@ jobs:
   launch-test:
     name: Install and launch Sandfox APK
     runs-on: ubuntu-24.04
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Download known-good Sandfox APK artifact
         uses: actions/download-artifact@v5
@@ -21,55 +19,22 @@ jobs:
           repository: sandeepbimt/iceraven-browser
           run-id: 37034943982
 
-      - name: Stage APK for emulator
-        run: |
-          ls -lh apk
-          cp apk/app-x86_64-forkRelease.apk /tmp/sandfox.apk
-          ls -lh /tmp/sandfox.apk
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Launch APK on Android 16 emulator
-        uses: ReactiveCircus/android-emulator-runner@v2
+      - name: Run Sandfox on Android emulator
+        id: emulator
+        uses: SweetRainGarden/SrgGactionEmulatorenvsetupAndroid@main
         with:
-          api-level: 35
+          apk-path: ${{ github.workspace }}/apk/app-x86_64-forkRelease.apk
+          run-script-path: .github/scripts/sandfox-launch-test.sh
+          api-level: '35'
           target: google_apis
           arch: x86_64
           profile: Nexus 6
-          ram-size: 3G
-          disk-size: 8G
-          force-avd-creation: true
-          working-directory: ${{ github.workspace }}
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          disable-animations: true
-          script: |
-            set -eu
-            curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -o /tmp/sandfox-artifact.zip "https://api.github.com/repos/sandeepbimt/iceraven-browser/actions/artifacts/11241012701/zip"
-            rm -rf /tmp/sandfox-artifact
-            mkdir -p /tmp/sandfox-artifact
-            unzip -q /tmp/sandfox-artifact.zip -d /tmp/sandfox-artifact
-            APK="/tmp/sandfox-artifact/app-x86_64-forkRelease.apk"
-            test -f "$APK"
-            echo "Using APK: $APK"
-            adb logcat -c
-            adb install -r "$APK"
-            adb shell monkey -p io.github.forkmaintainers.iceraven 1
-            sleep 15
-            adb shell pidof io.github.forkmaintainers.iceraven || true
-            adb logcat -d > logcat.txt
-            echo "=== FATAL EXCEPTIONS ==="
-            grep -n -A40 -B10 "FATAL EXCEPTION\|AndroidRuntime\|Fatal signal" logcat.txt || true
-            echo "=== PACKAGE PROCESS ==="
-            adb shell pidof io.github.forkmaintainers.iceraven || true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none -camera-front none
 
       - name: Upload launch log
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: sandfox-launch-log
-          path: logcat.txt
+          path: launch-log.txt
           if-no-files-found: ignore
