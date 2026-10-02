@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - cobalt/dummy-trial
+  pull_request:
+    branches:
+      - master
 
 jobs:
   cobalt-shell-smoke:
