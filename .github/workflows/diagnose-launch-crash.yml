@@ -48,9 +48,7 @@ jobs:
           disable-animations: true
           script: |
             set -eu
-            curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/sandeepbimt/iceraven-browser/actions/artifacts/11241012701/zip \
-              -o /tmp/sandfox-artifact.zip
+            curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -o /tmp/sandfox-artifact.zip "https://api.github.com/repos/sandeepbimt/iceraven-browser/actions/artifacts/11241012701/zip"
             rm -rf /tmp/sandfox-artifact
             mkdir -p /tmp/sandfox-artifact
             unzip -q /tmp/sandfox-artifact.zip -d /tmp/sandfox-artifact
