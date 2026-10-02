@@ -13,6 +13,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import java.security.MessageDigest
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.feature.pwa.ext.putWebAppManifest
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customtabs.FennecWebAppIntentProcessor
@@ -58,6 +59,7 @@ internal object StandaloneWebAppShortcutInstaller {
                 data = uri
                 // The receiver is transient. The PWA processor adds NEW_DOCUMENT to the actual
                 // ExternalAppBrowserActivity launch so this shortcut does not create an intermediate task.
+                session.content.webAppManifest?.let { putWebAppManifest(it) }
             }
 
         val shortcut =

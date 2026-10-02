@@ -5,6 +5,7 @@ on:
     branches:
       - iceraven
       - standalone-webapps-2.49.0
+      - sandfox/pwa-launch-performance
 
 jobs:
   release-automation:

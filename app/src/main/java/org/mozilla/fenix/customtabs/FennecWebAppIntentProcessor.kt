@@ -22,6 +22,7 @@ import mozilla.components.concept.engine.manifest.getOrNull
 import mozilla.components.feature.intent.ext.putSessionId
 import mozilla.components.feature.intent.processing.IntentProcessor
 import mozilla.components.feature.pwa.ManifestStorage
+import mozilla.components.feature.pwa.ext.getWebAppManifest
 import mozilla.components.feature.pwa.ext.putWebAppManifest
 import mozilla.components.feature.pwa.ext.toCustomTabConfig
 import mozilla.components.feature.tabs.CustomTabsUseCases
@@ -55,7 +56,10 @@ class FennecWebAppIntentProcessor(
         val url = safeIntent.dataString
 
         return if (!url.isNullOrEmpty() && matches(intent)) {
-            val webAppManifest = runBlockingIncrement { loadManifest(safeIntent, url) }
+            // Newly-created Sandfox PWA shortcuts carry their manifest in the launcher intent.
+            // This avoids a blocking manifest database/file lookup on the normal launch path.
+            val webAppManifest =
+                intent.getWebAppManifest() ?: runBlockingIncrement { loadManifest(safeIntent, url) }
             val sessionId =
                 if (webAppManifest != null) {
                     useCases.addWebApp(
