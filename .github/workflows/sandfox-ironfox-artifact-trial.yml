@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           CI_PIPELINE_CREATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          docker run --rm             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             ironfox-artifact-trial:ca0c9673             /bin/bash -lc '
+          docker run --rm -i             --user root             -v "$GITHUB_WORKSPACE/ironfox:/app/ironfox"             -w /app/ironfox             -e HOME=/root             -e IRONFOX_CI=1             -e IRONFOX_DEV_BRANCH=dev             -e IRONFOX_PROD_BRANCH=main             -e CI_COMMIT_REF_NAME="$GITHUB_REF_NAME"             -e CI_PIPELINE_CREATED_AT="$CI_PIPELINE_CREATED_AT"             -e IRONFOX_SIGN_SKIP_ADB=1             -e IRONFOX_SIGN=0             ironfox-artifact-trial:ca0c9673             /bin/bash -s <<'CONTAINER_SCRIPT'
               set -euo pipefail
               chmod +x scripts/*.sh
               ./scripts/get_sources.sh
@@ -88,11 +88,11 @@ jobs:
               test "$(grep -Fc "imply_option(\"--enable-artifact-builds\", False)" patches/gecko-overlay/ironfox/ironfox.configure)" = "1"
               sed -i "s/imply_option(\"--enable-artifact-builds\", False)/imply_option(\"--enable-artifact-builds\", True)/" patches/gecko-overlay/ironfox/ironfox.configure
               grep -F "imply_option(\"--enable-artifact-builds\", True)" patches/gecko-overlay/ironfox/ironfox.configure
-              test "$(grep -Fc 'ac_add_options --disable-artifact-builds' configs/mozconfigs/core.mozconfig)" = "0"
+              test "$(grep -Fc "ac_add_options --disable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "0"
 
               git config --global --add safe.directory /app/ironfox
               ./scripts/prebuild.sh all
-            '
+CONTAINER_SCRIPT
           echo "=== DISK AFTER SOURCES/PREBUILD ==="
           df -h /
           du -sh ironfox 2>/dev/null || true
