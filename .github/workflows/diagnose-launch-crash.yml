@@ -42,7 +42,8 @@ jobs:
           disable-animations: true
           script: |
             set -eu
-            APK="$(find apk -name '*.apk' -type f | head -1)"
+            APK="$GITHUB_WORKSPACE/apk/app-x86_64-forkRelease.apk"
+            test -f "$APK"
             adb logcat -c
             adb install -r "$APK"
             adb shell monkey -p io.github.forkmaintainers.iceraven 1
