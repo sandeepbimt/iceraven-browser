@@ -42,12 +42,23 @@ jobs:
           disk-size: 8G
           force-avd-creation: true
           working-directory: ${{ github.workspace }}
+          env:
+            GITHUB_TOKEN: ${{ github.token }}
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
             set -eu
-            APK="$(find /home/runner/work -name app-x86_64-forkRelease.apk -type f | head -1)"
-            test -n "$APK"
+            curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/sandeepbimt/iceraven-browser/actions/artifacts/11241012701/zip \
+              -o /tmp/sandfox-artifact.zip
+            rm -rf /tmp/sandfox-artifact
+            mkdir -p /tmp/sandfox-artifact
+            unzip -q /tmp/sandfox-artifact.zip -d /tmp/sandfox-artifact
+            APK="/tmp/sandfox-artifact/app-arm64-v8a-forkRelease.apk"
+            if [ ! -f "$APK" ]; then
+              APK="/tmp/sandfox-artifact/app-x86_64-forkRelease.apk"
+            fi
+            test -f "$APK"
             echo "Using APK: $APK"
             adb logcat -c
             adb install -r "$APK"
