@@ -77,9 +77,18 @@ jobs:
               # disables Gecko artifact builds. Enable them here so this trial
               # answers whether the Android/Fenix layer can build on the standard
               # GitHub runner without compiling Gecko locally.
+              # The pinned checkpoint disables artifact builds in the shared
+              # core mozconfig, and ironfox.configure also enforces that default.
+              # For this diagnostic trial both sources of the conflicting
+              # --disable-artifact-builds setting must be removed/enabled.
+              test "$(grep -Fc 'ac_add_options --disable-artifact-builds' configs/mozconfigs/core.mozconfig)" = "1"
+              test "$(grep -Fc 'export MOZ_ARTIFACT_BUILDS=' configs/mozconfigs/core.mozconfig)" = "1"
+              sed -i '/ac_add_options --disable-artifact-builds/d' configs/mozconfigs/core.mozconfig
+              sed -i '/export MOZ_ARTIFACT_BUILDS=/d' configs/mozconfigs/core.mozconfig
               test "$(grep -Fc "imply_option(\"--enable-artifact-builds\", False)" patches/gecko-overlay/ironfox/ironfox.configure)" = "1"
               sed -i "s/imply_option(\"--enable-artifact-builds\", False)/imply_option(\"--enable-artifact-builds\", True)/" patches/gecko-overlay/ironfox/ironfox.configure
               grep -F "imply_option(\"--enable-artifact-builds\", True)" patches/gecko-overlay/ironfox/ironfox.configure
+              test "$(grep -Fc 'ac_add_options --disable-artifact-builds' configs/mozconfigs/core.mozconfig)" = "0"
 
               git config --global --add safe.directory /app/ironfox
               ./scripts/prebuild.sh all
