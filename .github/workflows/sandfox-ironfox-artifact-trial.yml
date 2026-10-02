@@ -80,10 +80,16 @@ jobs:
           sed -i "/export MOZ_ARTIFACT_BUILDS=/d" configs/mozconfigs/core.mozconfig
           printf '%s\n' 'ac_add_options --enable-artifact-builds' >> configs/mozconfigs/core.mozconfig
           test "$(grep -Fc "ac_add_options --enable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "1"
-          test "$(grep -Fc "imply_option(\"--enable-artifact-builds\", False)" patches/gecko-overlay/ironfox/ironfox.configure)" = "1"
-          sed -i "s/imply_option(\"--enable-artifact-builds\", False)/imply_option(\"--enable-artifact-builds\", True)/" patches/gecko-overlay/ironfox/ironfox.configure
-          grep -F "imply_option(\"--enable-artifact-builds\", True)" patches/gecko-overlay/ironfox/ironfox.configure
+          test "$(grep -Fc "imply_option("--enable-artifact-builds", False)" patches/gecko-overlay/ironfox/ironfox.configure)" = "1"
+          sed -i "s/imply_option("--enable-artifact-builds", False)/imply_option("--enable-artifact-builds", True)/" patches/gecko-overlay/ironfox/ironfox.configure
+          grep -F "imply_option("--enable-artifact-builds", True)" patches/gecko-overlay/ironfox/ironfox.configure
           test "$(grep -Fc "ac_add_options --disable-artifact-builds" configs/mozconfigs/core.mozconfig)" = "0"
+
+          # Artifact mode requires the compile environment to be disabled.
+          # IronFox's normal Gecko build mozconfig enables it, so remove only that conflicting option for this trial.
+          test "$(grep -Fc "ac_add_options --enable-compile-environment" configs/mozconfigs/build.mozconfig)" = "1"
+          sed -i "/ac_add_options --enable-compile-environment/d" configs/mozconfigs/build.mozconfig
+          test "$(grep -Fc "ac_add_options --enable-compile-environment" configs/mozconfigs/build.mozconfig)" = "0"
 
           git config --global --add safe.directory /app/ironfox
           ./scripts/prebuild.sh all
