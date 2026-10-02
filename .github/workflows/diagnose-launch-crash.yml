@@ -24,7 +24,7 @@ jobs:
         uses: SweetRainGarden/SrgGactionEmulatorenvsetupAndroid@develop
         with:
           apk-path: ${{ github.workspace }}/apk/app-x86_64-forkRelease.apk
-          run-script-path: .github/scripts/sandfox-launch-test.sh
+          run-script-path: ${{ github.workspace }}/.github/scripts/sandfox-launch-test.sh
           api-level: '35'
           target: google_apis
           arch: x86_64
