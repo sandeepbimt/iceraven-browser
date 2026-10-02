@@ -124,6 +124,12 @@ jobs:
               mkdir -p /opt/IronFox
               printf "%s\n" "sandfox-artifact-trial-placeholder" > /opt/IronFox/ironfox-sb-gapi-key.txt
               git config --global --add safe.directory /app/ironfox
+              git -C external/gecko init
+              git -C external/gecko remote add origin https://github.com/mozilla-firefox/firefox.git
+              git -C external/gecko fetch --depth 1 origin fdd757a2e09c9471cddf383e64e631e4ce178499
+              git -C external/gecko reset --mixed fdd757a2e09c9471cddf383e64e631e4ce178499
+              test "$(git -C external/gecko rev-parse HEAD)" = "fdd757a2e09c9471cddf383e64e631e4ce178499"
+              test -n "$(git -C external/gecko status --short)"
               ./scripts/build.sh arm64
             '
           echo "=== DISK AFTER BUILD ==="
