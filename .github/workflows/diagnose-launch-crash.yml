@@ -9,6 +9,8 @@ jobs:
   launch-test:
     name: Install and launch Sandfox APK
     runs-on: ubuntu-24.04
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Download known-good Sandfox APK artifact
         uses: actions/download-artifact@v5
@@ -42,8 +44,6 @@ jobs:
           disk-size: 8G
           force-avd-creation: true
           working-directory: ${{ github.workspace }}
-          env:
-            GITHUB_TOKEN: ${{ github.token }}
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
