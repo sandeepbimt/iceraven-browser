@@ -5,6 +5,7 @@ on:
     branches:
       - iceraven
       - standalone-webapps-2.49.0
+      - sandfox/clean-base-iceraven-pwa
 
 jobs:
   release-automation:
@@ -58,26 +59,26 @@ jobs:
 
       - name: Sign APKs with temporary test key
         env:
-          KEYSTORE_PASSWORD: iceraven-test
-          KEY_PASSWORD: iceraven-test
+          KEYSTORE_PASSWORD: sandfox-test
+          KEY_PASSWORD: sandfox-test
         run: |
           set -e
           keytool -genkeypair \
             -keystore /tmp/iceraven-test.jks \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
-            -alias iceraven-test \
+            -alias sandfox-test \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=Iceraven Test"
+            -dname "CN=Sandfox Test"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -x "$APKSIGNER"
           echo "Using $APKSIGNER"
           for apk in gradle/build/app/outputs/apk/forkRelease/*-unsigned.apk; do
             signed="${apk%-unsigned.apk}.apk"
             "$APKSIGNER" sign \
-              --ks /tmp/iceraven-test.jks \
+              --ks /tmp/sandfox-test.jks \
               --ks-key-alias iceraven-test \
               --ks-pass pass:"$KEYSTORE_PASSWORD" \
               --key-pass pass:"$KEY_PASSWORD" \
@@ -94,16 +95,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
-          name: iceraven-standalone-arm64-v8a
+          name: sandfox-arm64-v8a
 
       - name: Upload armeabi apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-armeabi-v7a-forkRelease.apk
-          name: iceraven-standalone-armeabi-v7a
+          name: sandfox-armeabi-v7a
 
       - name: Upload x86_64 apk
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk
-          name: iceraven-standalone-x86_64
+          name: sandfox-x86_64
