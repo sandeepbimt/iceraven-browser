@@ -64,7 +64,7 @@ jobs:
         run: |
           set -e
           keytool -genkeypair \
-            -keystore /tmp/iceraven-test.jks \
+            -keystore /tmp/sandfox-test.jks \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
             -alias sandfox-test \
@@ -79,7 +79,7 @@ jobs:
             signed="${apk%-unsigned.apk}.apk"
             "$APKSIGNER" sign \
               --ks /tmp/sandfox-test.jks \
-              --ks-key-alias iceraven-test \
+              --ks-key-alias sandfox-test \
               --ks-pass pass:"$KEYSTORE_PASSWORD" \
               --key-pass pass:"$KEY_PASSWORD" \
               --out "$signed" \
