@@ -41,11 +41,24 @@ jobs:
           ./automation/iceraven/patch_android_components.sh
           ./automation/iceraven/setup_venv.sh
 
-      - name: Relpace strings
+      - name: Apply Sandfox branding
         run: |
-          sed -i 's/Firefox/Iceraven/g' app/src/*/res/values*/*strings.xml
-          sed -i '/about_content/s/Mozilla/@forkmaintainers/' app/src/*/res/values*/*strings.xml
+          # Brand only the packaged app; browser functionality and package IDs remain unchanged.
+          sed -i 's/Firefox/Sandfox/g; s/Iceraven/Sandfox/g' app/src/*/res/values*/*strings.xml
+          sed -i '/about_content/s/Mozilla/Sandfox/' app/src/*/res/values*/*strings.xml
           sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
+          mkdir -p app/src/main/res/drawable
+          cat > app/src/main/res/drawable/sandfox_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#12161C" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#FF9F43" android:pathData="M18,31 L31,16 L40,29 C45,26 50,25 54,25 C58,25 63,26 68,29 L77,16 L90,31 L87,67 C82,82 69,91 54,94 C39,91 26,82 21,67 Z"/>
+              <path android:fillColor="#12161C" android:pathData="M27,43 C34,34 44,33 54,39 C64,33 74,34 81,43 L78,65 C72,76 63,82 54,84 C45,82 36,76 30,65 Z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M36,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12zM60,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12z"/>
+              <path android:fillColor="#FF9F43" android:pathData="M48,65h12l-6,8z"/>
+          </vector>
+          EOF
+          sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@drawable/sandfox_launcher"#' app/src/main/AndroidManifest.xml
+          sed -i 's#android:roundIcon="@mipmap/ic_launcher_round"#android:roundIcon="@drawable/sandfox_launcher"#' app/src/main/AndroidManifest.xml
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -62,8 +75,8 @@ jobs:
 
       - name: Sign APKs with temporary test key
         env:
-          KEYSTORE_PASSWORD: iceraven-test
-          KEY_PASSWORD: iceraven-test
+          KEYSTORE_PASSWORD: sandfox-test
+          KEY_PASSWORD: sandfox-test
         run: |
           set -e
           keytool -genkeypair \
@@ -74,7 +87,7 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=Iceraven Test"
+            -dname "CN=Sandfox Test"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -x "$APKSIGNER"
           echo "Using $APKSIGNER"
@@ -98,5 +111,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
-          name: iceraven-standalone-arm64-v8a
+          name: sandfox-arm64-v8a
 
