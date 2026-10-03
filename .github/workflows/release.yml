@@ -1,7 +1,9 @@
 name: Release
 
 on:
-  create:
+  push:
+    tags:
+      - 'iceraven-*'
 
 jobs:
   release-automation:
