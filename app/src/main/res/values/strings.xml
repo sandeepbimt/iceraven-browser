@@ -4239,7 +4239,7 @@
     <string name="native_protection_filter_lists">Filter lists</string>
     <string name="native_protection_lists_selected">%1$d lists selected</string>
     <string name="native_protection_update_filters">Update selected filters</string>
-    <string name="native_protection_update_summary">Refresh selected lists in Gecko's native classifier.</string>
+    <string name="native_protection_update_summary">Refresh selected lists in Gecko native classifier.</string>
     <string name="native_protection_updating">Refreshing filters…</string>
     <string name="native_protection_update_started">Refresh requested in the background.</string>
     <string name="native_protection_custom_filters">My filters</string>
