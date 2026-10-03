@@ -53,10 +53,11 @@ class NativeProtectionEngine private constructor(private val context: Context) {
     fun customFilters(): String = prefs.getString(KEY_CUSTOM_FILTERS, "").orEmpty()
 
     fun setCustomFilters(filters: String) {
-        require(filters.toByteArray(Charsets.UTF_8).size <= MAX_CUSTOM_FILTER_BYTES) {
+        val normalized = normalizeFilterText(filters)
+        require(normalized.toByteArray(Charsets.UTF_8).size <= MAX_CUSTOM_FILTER_BYTES) {
             "My filters are too large"
         }
-        prefs.edit().putString(KEY_CUSTOM_FILTERS, filters).apply()
+        prefs.edit().putString(KEY_CUSTOM_FILTERS, normalized).apply()
         if (isEnabled()) applyPreferences(forceReload = true)
     }
 
@@ -138,19 +139,12 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         val currentVersion = prefs.getInt(KEY_BUNDLED_FILTER_VERSION, 0)
         if (currentVersion >= BUNDLED_FILTER_VERSION) return
 
-        val merged = linkedSetOf<String>()
-        prefs.getString(KEY_CUSTOM_FILTERS, null)
-            ?.lineSequence()
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.forEach { merged += it }
-        DEFAULT_CUSTOM_FILTERS
-            .lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .forEach { merged += it }
-
-        val normalized = merged.joinToString("\n")
+        val normalized = normalizeFilterText(
+            sequenceOf(
+                prefs.getString(KEY_CUSTOM_FILTERS, null).orEmpty(),
+                DEFAULT_CUSTOM_FILTERS,
+            ).joinToString("\n"),
+        )
         require(normalized.toByteArray(Charsets.UTF_8).size <= MAX_CUSTOM_FILTER_BYTES) {
             "Bundled filters exceed the custom-filter limit"
         }
@@ -159,6 +153,13 @@ class NativeProtectionEngine private constructor(private val context: Context) {
             .putInt(KEY_BUNDLED_FILTER_VERSION, BUNDLED_FILTER_VERSION)
             .apply()
     }
+
+    private fun normalizeFilterText(filters: String): String =
+        filters.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toCollection(linkedSetOf())
+            .joinToString("\n")
 
     private fun scheduleUpdates() {
         val request = PeriodicWorkRequestBuilder<NativeProtectionUpdateWorker>(
