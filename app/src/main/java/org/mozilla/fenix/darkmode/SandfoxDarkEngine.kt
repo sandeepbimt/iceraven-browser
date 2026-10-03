@@ -24,7 +24,7 @@ object SandfoxDarkEngine {
             .ensureBuiltIn(EXTENSION_LOCATION, EXTENSION_ID)
             .accept(
                 { extension ->
-                    Log.i(TAG, "Dark engine ready: ${extension.id}")
+                    Log.i(TAG, "Dark engine ready: ${extension?.id ?: EXTENSION_ID}")
                 },
                 { error ->
                     Log.e(TAG, "Failed to install the Sandfox dark engine", error)
