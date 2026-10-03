@@ -699,6 +699,9 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 onWebCompatReporterClick = {
                                                     menuStore.dispatch(MenuAction.Navigate.WebCompatReporter)
                                                 },
+                                                onNativeProtectionClick = {
+                                                    menuStore.dispatch(MenuAction.Navigate.NativeProtection)
+                                                },
                                                 onSummarizePageMenuExposed = {
                                                     menuStore.dispatch(MenuAction.OnSummarizationMenuExposed)
                                                 },
