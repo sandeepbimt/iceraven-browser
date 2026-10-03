@@ -28,14 +28,7 @@ class SandfoxGeckoPrewarmReceiver : BroadcastReceiver() {
         (context.applicationContext as? FenixApplication)
             ?.components
             ?.core
-            ?.also { core ->
-                core.engine.warmUp()
-
-                // Touch GeckoView's installed-extension registry immediately after Gecko
-                // warm-up. This lets an already-installed uBlock Origin restore its
-                // persisted extension state while the browser process is still warm.
-                // Do not enable/disable extensions or alter filter settings here.
-                core.geckoRuntime.webExtensionController.list()
-            }
+            ?.engine
+            ?.warmUp()
     }
 }
