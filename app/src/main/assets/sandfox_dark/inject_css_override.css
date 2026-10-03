@@ -1,0 +1,13 @@
+:root {
+  --main-bgcolor: white;
+  --main-color: unset;
+  --secondary-color: black;
+}
+
+iframe {
+  border-color: var(--ud-bg-css-switchoff,rgb(51, 51, 51)); /* The default iframe border is quite light */
+}
+
+[ud-html4-support]{
+  color: var(--ud-html4-color,white)!important;
+}

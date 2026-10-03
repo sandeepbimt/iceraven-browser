@@ -1,0 +1,2271 @@
+class uDarkExtendedContentScript {
+
+  is_content_script = true
+
+
+  askSynchronousBackground(question, json = false, syncData = {}, param = "param") {
+    let requestIdentifier = Math.random().toString(36).slice(2);
+    browser.runtime.sendMessage({ askSynchronousBackgroundIdentifier: requestIdentifier, ...syncData });
+    let xhr = new window.XMLHttpRequest();
+    xhr.open("GET", `https://${question}.uDark/askSynchronousBackground/${requestIdentifier}/${param}`, false); // false = synchrone
+    xhr.send(null);
+    let responseText = xhr.responseText;
+    return json ? JSON.parse(responseText) : responseText;
+  }
+
+  install() {
+
+
+    if (window.parent !== window && window.userSettings.embedsInheritanceBehavior == "inheritFromParent") {
+      let useHttpSwitchOff = ["http:", "https:"].includes(document.location.protocol);
+      let isParentUDark = this.askSynchronousBackground("isParentUDark", true, {
+        switchOffCSS: useHttpSwitchOff,
+      }, "switchOffCSS").parentHasUltimaDark;
+      if (!isParentUDark) {
+        if (!useHttpSwitchOff) {
+
+          let sheet = new CSSStyleSheet();
+          sheet.replaceSync(uDark.cssSwitchOffString);
+          // document.adoptedStyleSheets = [sheet]
+          window.wrappedJSObject.document.adoptedStyleSheets.push(sheet);
+        }
+        return false; // Do not install uDark in this embed since the parent does not have uDark and the user requested inheritance from parent
+      }
+
+    }
+    this.port = browser.runtime.connect({ // Connect to the background script to register the edition of subresources
+      // Do it after checking the parent frame to avoid registering unneeded connections && therefore whitelisting the frame
+      name: "port-from-cs"
+    });
+    uDark.exportFunction = globalThis.exportFunction; // Don't override the exportFunction function, but make it available to ultimadark
+    console.info("UltimaDark", "Content script install", window);
+    if (uDark.direct_window_export && !window.world_injection_available) {
+
+      [
+        ["this.uDarkExtended = class {};this.uDarkC=", uDarkC],
+        z => {
+          window.uDark = new uDarkC();
+        },
+        AllLevels.install,
+        {
+          do: z => window.wrappedJSObject.uDark.userSettings = cloneInto(uDark.getSafeUserSettings(window.userSettings), window)
+        },
+        WebsitesOverrideScript.override_website
+
+
+      ].map(code => {
+        if (code.do) {
+          console.log("Executing code.do()", code);
+          return code.do();
+        }
+        let codeStr = code.join ? code.map(x => x.toString()).join("\n") : "(" + code.toString() + ")()";
+        (new window.wrappedJSObject.Function(codeStr))(); // Use Function to avoid eval, better speed, less warning
+      });
+
+
+    }
+    else {
+      // console.warn("UltimaDark : Direct window export is not available, using cloneInto is not implemented yet");
+      // TODO : Alterantive injection : Cloneinto ? or smart <script> injection ?
+      // CloneInto seems to be the best candidate given testing.
+    }
+    //this.install_postLoadCheckCSSImages();
+
+  }
+  /* ============================================================
+ * Background text overlap detection
+ * (first-level function, no uDark.xxx assignment)
+ * ------------------------------------------------------------
+ * - IntersectionObserver driven
+ * - No scroll listener
+ * - elementsFromPoint for paint-order truth
+ * - Sampling strategy:
+ *   • center
+ *   • vertical middle line
+ *   • horizontal middle line
+ *   • two diagonals
+ * - Returns FULL element stack at sampled points
+ * - Caches result in uDark.general_cache
+ * - Supports callbackOnFound(result)
+ * ============================================================ */
+
+  registerPotentialBackgroundSelector(selector, options = {}) {
+
+    /* ------------------------------
+     * Global safety / cache init
+     * ------------------------------ */
+    if (!window.uDark) {
+      window.uDark = {};
+    }
+
+    if (!(uDark.general_cache instanceof Map)) {
+      uDark.general_cache = new Map();
+    }
+
+    if (!uDark._bgTextOverlapIO) {
+      uDark._bgTextOverlapIO = null;
+    }
+
+    const cacheKey = options.cacheKey || ("bgText:" + selector);
+
+    if (uDark.general_cache.has(cacheKey)) {
+      return;
+    }
+
+    /* ------------------------------
+     * Lazy IO init (once)
+     * ------------------------------ */
+    if (!uDark._bgTextOverlapIO) {
+
+      uDark._bgTextOverlapIO = new IntersectionObserver(
+        entries => {
+
+          for (const entry of entries) {
+
+            if (!entry.isIntersecting) {
+              continue;
+            }
+
+            const elem = entry.target;
+            const state = elem.__bgTextOverlapState;
+
+            if (!state || state.resolved) {
+              continue;
+            }
+
+            uDark.analyzeBackgroundTextOverlap(elem, state);
+            uDark._bgTextOverlapIO.unobserve(elem);
+          }
+        },
+        { root: null, threshold: 0 }
+      );
+    }
+
+    /* ------------------------------
+     * Attach elements
+     * ------------------------------ */
+    const elems = document.querySelectorAll(selector);
+    if (!elems.length) {
+      return;
+    }
+
+    elems.forEach(elem => {
+
+      if (elem.__bgTextOverlapState) {
+        return;
+      }
+
+      elem.__bgTextOverlapState = {
+        selector,
+        cacheKey,
+        resolved: false,
+        step: options.step || 40,
+        callbackOnFound: options.callbackOnFound || null
+      };
+
+      uDark._bgTextOverlapIO.observe(elem);
+    });
+  }
+
+
+  /* ============================================================
+   * Core analyzer
+   * ============================================================ */
+  analyzeBackgroundTextOverlap(elem, state) {
+
+    const rect = elem.getBoundingClientRect();
+
+    // Must be in viewport
+    if (
+      rect.bottom <= 0 ||
+      rect.right <= 0 ||
+      rect.top >= innerHeight ||
+      rect.left >= innerWidth
+    ) {
+      return;
+    }
+
+    const points = [];
+    const step = state.step;
+
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    // Center
+    points.push([cx, cy]);
+
+    // Vertical middle line
+    for (let y = rect.top; y <= rect.bottom; y += step) {
+      points.push([cx, y]);
+    }
+
+    // Horizontal middle line
+    for (let x = rect.left; x <= rect.right; x += step) {
+      points.push([x, cy]);
+    }
+
+    // Diagonal TL → BR
+    for (let t = 0; t <= 1; t += step / Math.max(rect.width, rect.height)) {
+      points.push([
+        rect.left + rect.width * t,
+        rect.top + rect.height * t
+      ]);
+    }
+
+    // Diagonal BL → TR
+    for (let t = 0; t <= 1; t += step / Math.max(rect.width, rect.height)) {
+      points.push([
+        rect.left + rect.width * t,
+        rect.bottom - rect.height * t
+      ]);
+    }
+
+    let hasTextOverlay = false;
+    const stacks = [];
+
+    for (const [x, y] of points) {
+
+      if (
+        x < 0 || y < 0 ||
+        x > innerWidth || y > innerHeight
+      ) {
+        continue;
+      }
+
+      const stack = document.elementsFromPoint(x, y);
+
+      stacks.push({
+        x,
+        y,
+        stack
+      });
+
+      for (const node of stack) {
+
+        if (node === elem || elem.contains(node)) {
+          continue;
+        }
+
+        const text = node.innerText || node.textContent;
+
+        if (text && text.trim().length > 0) {
+          hasTextOverlay = true;
+          break;
+        }
+      }
+
+      if (hasTextOverlay) {
+        break;
+      }
+    }
+
+    const result = {
+      selector: state.selector,
+      element: elem,
+      hasTextOverlay,
+      stacks,               // FULL element stacks per sampled point
+      checkedAt: performance.now()
+    };
+
+    uDark.general_cache.set(state.cacheKey, result);
+    state.resolved = true;
+
+    if (typeof state.callbackOnFound === "function") {
+      try {
+        state.callbackOnFound(result);
+      } catch (_) {
+        /* silent by design */
+      }
+    }
+  }
+
+  install_postLoadCheckCSSImages() {
+
+    setTimeout(z => {
+      uDark.registerPotentialBackgroundSelector(
+        ".V2_global_navi .class1 dt.tab1",
+        {
+          callbackOnFound(result) {
+
+            // result object
+            // {
+            //   selector,
+            //   element,
+            //   hasTextOverlay,
+            //   checkedAt
+            // }
+
+            console.log(result)
+          }
+        }
+      );
+    }, 2000)
+
+  }
+
+
+}
+
+class WebsitesOverrideScript {
+    static override_website = function () {
+
+        try {
+            typeof localStorage;
+            uDark.localStorageAvailable = true;
+        } catch (e) {
+            // uDark.log("UltimaDark", "Local storage is not available", e,document.location.href);
+        }
+
+        let start = performance.now();
+
+        uDark.info("Content script override website", window);
+
+        uDark.ensureBestRGBAFuncRef();
+        if (!uDark.userSettings.serviceWorkersEnabled && window.navigator.serviceWorker) {
+            if (uDark.localStorageAvailable) {
+                // Insecure operations have in common a non available localStorage
+                window.navigator.serviceWorker.getRegistrations().then(rs => rs.map(x => x.unregister()))
+            }
+            delete Navigator.prototype.serviceWorker;
+        }
+
+        // Avoid infinite loops
+        if (window.uDark && window.uDark.installed) {
+            return; // Already fully installed. Do not reinstall if somehow another uDark object gets injected in the page
+        } else {
+            uDark.installed = true;
+        }
+        {
+            // Zone for revoking property edition by the website : // no true=no trust
+            // https://developer.mozilla.org/fr/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
+            // Some functions are replaced by good or less polyfills, i prefer native functions when possible
+            Object.defineProperty(String.prototype, "replaceAll", {
+                value: String.prototype.replaceAll,
+                writable: false,
+                configurable: false,
+                enumerable: false
+            }); // WikiCommons uses this one
+
+            // End of zone for revoking property edition by the website
+        }
+
+        uDark.checkDomEdit = false;
+        if (uDark.checkDomEdit) {
+
+
+            uDark.functionPrototypeEditor(HTMLSourceElement, HTMLSourceElement.prototype.setAttribute, (elem, args) => {
+                console.log("Debug Node mutation (setAttribute)", elem, args);
+                return args;
+            });
+            uDark.functionPrototypeEditor(Node, [Node.prototype.insertBefore, Node.prototype.appendChild], (elem, args) => {
+                console.error("Debug Node mutation (insertBefore, Node.prototype.appendChild)", elem, args, new Error().stack);
+                return args;
+            })
+            uDark.functionPrototypeEditor(Node, Node.prototype.appendChild, (elem, args) => {
+                console.log("Debug Node mutation (appendChild)", elem, args);
+                return args;
+            })
+            uDark.functionPrototypeEditor(Element, Element.prototype.after, (elem, args) => {
+                console.log("Debug Node mutation (after)", elem, args);
+                return args;
+            })
+            uDark.functionPrototypeEditor(Document, Document.prototype.createElement, (elem, args) => {
+                console.log("Debug Node mutation", elem, args);
+                return args;
+            })
+            return;
+        }
+
+
+
+
+
+        uDark.info("Websites overrides install", window);
+
+        {
+            if (uDark.userSettings.imageEditionEnabled) {
+                uDark.image_element_install_staging_facade();
+            }
+
+            // Create a dedicated passthrough Trusted Types policy for UltimaDark.
+            // It allows extension-generated markup to be passed to Trusted Types-protected
+            // DOM sinks while preserving the page's Trusted Types enforcement.
+            uDark.domParserPolicy = null;
+
+            if (globalThis.trustedTypes) {
+                try {
+                    uDark.domParserPolicy = globalThis.trustedTypes.createPolicy(
+                        "ultimadark",
+                        {
+                            createHTML: value => value
+                        }
+                    );
+                } catch (error) {
+                    console.warn(
+                        "[UltimaDark] Unable to create Trusted Types policy:",
+                        error
+                    );
+                }
+            }
+        }
+
+        // uDark.functionPrototypeEditor(HTMLObjectElement, HTMLObjectElement.prototype.checkValidity, (elem, args) => {
+        //   return args;
+        // })
+
+        uDark.functionPrototypeEditor(CSSStyleDeclaration, CSSStyleDeclaration.prototype.setProperty, (elem, args) => {
+            let edited = uDark.edit_str_nochunk(args[0] + ":" + args[1])
+                .protect_simple(uDark.shortHandRegex, "--ud-setProperty-ptd-$1:");
+            let cssParser = new CSSStyleSheet()
+            cssParser.o_ud_replaceSync(`z{${edited}`);
+            let cssStyle = cssParser.cssRules[0].style
+            let keys = Object.values(cssParser.cssRules[0].style)
+            let firstKey = keys.shift();
+            // We dont need to unprotect since we know the first key from args[0], and there will be no addional keys in the css if a shorthand is used
+            args[1] = cssStyle.getPropertyValue(firstKey);
+
+            for (let key of /*remaining*/keys) {
+                elem.o_ud_setProperty(key, cssStyle.getPropertyValue(key));
+            }
+
+            return args
+        });
+
+
+        uDark.functionPrototypeEditor(CSSStyleSheet,
+            [
+                CSSStyleSheet.prototype.replace,
+                CSSStyleSheet.prototype.replaceSync
+            ], (elem, args) => { // Needed to manage it some day, now done :)
+                args[0] = uDark.edit_str(args[0]);
+                return args;
+            })
+
+
+        // This is the one youtube uses
+        uDark.valuePrototypeEditor(
+            [Element, ShadowRoot],
+            "innerHTML",
+            uDark.frontEditHTML
+        ); // toString : some objects can redefine tostring to generate their inner
+
+        // uDark.valuePrototypeEditor([Element, ShadowRoot], "innerHTML", uDark.frontEditHTML, (elem,value)=>
+
+        { // Wrap JS editing iframe and this kind of objects SRC's
+            uDark.valuePrototypeEditor([HTMLIFrameElement, HTMLEmbedElement], "src", uDark.frontEditHTMLPossibleDataURL);
+            uDark.valuePrototypeEditor([HTMLObjectElement], "data", uDark.frontEditHTMLPossibleDataURL);
+            uDark.valuePrototypeEditor([HTMLIFrameElement], "srcdoc", uDark.frontEditHTML);
+        }
+
+        uDark.valuePrototypeEditor(
+            Element,
+            "outerHTML",
+            uDark.frontEditHTML
+        ); // toString : sombe object can redefine tostring to generate thzir inner
+
+        // This is the one google uses
+        uDark.functionPrototypeEditor(Element, Element.prototype.insertAdjacentHTML, (elem, args) => {
+            args[1] = uDark.frontEditHTML("ANY_ELEMENT", args[1]); // frontEditHTML have a diffferent behavior with STYLE elements
+            return args;
+        }, true)
+        uDark.valuePrototypeEditor(HTMLElement, "nonce", (elem, value) => {
+            return uDark.byPassCSPNonce;
+        }, (elem, value) => {
+            return elem instanceof HTMLStyleElement;
+        });
+
+        uDark.functionPrototypeEditor(Element, Element.prototype.setAttribute, (elem, args) => {
+
+            if (elem instanceof HTMLLinkElement && args[0].toLowerCase() === "integrity") {
+                elem.origIntegrity = args[1];
+                args[0] = new Error("CancelledCall");
+                args[0].altArgs = ["data-no-integrity", args[1]];
+                return args;
+            }
+
+            // if(elem instanceof HTMLStyleElement && args[0].toLowerCase() === "nonce")
+            // { // useless : if site is defining a nonce, it has it as CSP
+            //     args[1] = uDark.byPassCSPNonce; // To bypass CSP that can block our css when we edit style elements textContent, we set a nonce that we will add to our injected css rules, this way we can bypass the hash check and still have some level of security against other css injections
+            //     return args; 
+            // }
+            let res = uDark.edit_str(args[1] +
+                "" // I just learn again strings are passed by reference in JS the hard way
+            );
+            args[1] = res;
+            return args;
+        }, (attribute, value) =>
+            ["style", "integrity"].includes(attribute.toLowerCase()))
+
+        uDark.valuePrototypeEditor(HTMLImageElement, "src", (image, value) => {
+            if (!(value instanceof String || typeof value === "string")) {
+                return value;
+            }
+            // return value;
+            let res = uDark.image_element_prepare_href(image, value);
+            if (value.startsWith("data:")) {
+                // image.o_ud_src = value;
+                setTimeout(() => {
+                    image.o_ud_src = res;
+                }, 1);  // IDK how but web.whatsapp.com managed to go error when image.src is a data: URL and i edited it for a http url
+                //So : return value; && wait a bit before setting the edited src. Not a clean solution but works for now.
+                // Not a big deal since data: URLs set by JS are usually small does not impact performance significantly (No network request)
+                return value;
+            }
+            return res;
+        },
+            false, // Condition: Inconditional
+            //Aftermath: none
+            false,
+            (image, value) => { // Edited getter, to trick websites that are checking src integrity after setting it
+                return uDark.image_element_restore_original_href(value);
+            }
+
+        );
+        // (function () {
+        //   const orig = HTMLImageElement.prototype.getAttribute;
+
+        //   HTMLImageElement.prototype.getAttribute = function (name) {
+
+        //     let res =   orig.call(this, name);
+
+        //     if(name.toLowerCase()==="src")
+        //     {
+        //       console.log("Intercepted getAttribute src on",this);
+        //       return this.src; // Use the edited src getter
+        //     }
+        //     else
+        //     {
+        //       console.log("getAttribute",name,"on",this,"returning",res);
+        //     }
+        //     // comportement original
+        //     return res
+        //   };
+        // })();
+
+
+        uDark.valuePrototypeEditor([HTMLSourceElement, HTMLImageElement], "srcset", (image, value) => {
+            console.log("Editing srcset", image, value);
+            return uDark.image_element_prepare_srcset(image, value);
+
+        },
+            false,
+            false,
+            (image, value) => uDark.image_element_restore_original_srcset(value)
+        );
+
+
+
+        // function makeSmartElement(tag) {
+        //   const el = document.createElement(tag);
+        //   return new Proxy(el, {
+        //     get(target, prop) {
+
+        //       console.log(`[${tag}] Getting ${prop}`);
+        //       const value = Reflect.get(target, prop, target);
+        //       return typeof value === "function" ? value.bind(target) : value;
+        //     },
+        //     set(target, prop, value) {
+        //       console.log(`[${tag}] Setting ${prop} =`, value);
+        //       return Reflect.set(target, prop, value, target);
+        //     }
+        //   });
+        // }
+
+        // // Exemple
+        // const source = makeSmartElement("source");
+        // source.src = "bar.mp4"; // log OK
+        // source.src
+
+        uDark.valuePrototypeEditor(SVGImageElement, "href", (image, value) => { // the <image> tag inside an SVG, no an <img> tag !
+            return uDark.image_element_prepare_href(image, value);
+        });
+
+        uDark.valuePrototypeEditor(HTMLLinkElement, "href", (elem, value) => {
+            if (elem.rel.endsWith("icon")) {
+                value = value + "#ud_favicon";
+            }
+            return value;
+        }, (elem, value) => {
+            elem.rel == elem.rel.trim().toLowerCase();
+            return (elem.rel == "stylesheet" || elem.rel.endsWith("icon"))
+
+        }, (elem, value, new_value) => {
+            if (elem.rel == "stylesheet" && uDark.enable_idk_mode && !uDark.chunk_stylesheets_idk_only_cors) {
+
+                elem.addEventListener("load", uDark.do_idk_mode);
+            }
+        })
+        uDark.valuePrototypeEditor([HTMLLinkElement], "integrity", (elem, value) => {
+            console.log("CSS integrity set", elem, value);
+            // elem.addEventListener("error", z => linkIntegrityErrorEvent(elem), { once: true, capture: true });
+            elem.origIntegrity = value;
+            return new Error("CancelledCall");
+        }, false, (elem, value) => {
+            elem.removeAttribute("integrity");
+        },
+            (elem, value) => { // Edited getter, to trick websites that are checking integrity after setting it
+                console.log("CSS integrity get", elem, value);
+                return elem.origIntegrity;
+            }
+        )
+
+
+        uDark.functionWrapper(SVGSVGElement, SVGSVGElement.prototype.setAttribute, "setAttribute", function (elem, args) {
+            elem.addEventListener("js_svg_loaded", z => uDark.frontEditSVG(elem));
+            setTimeout(() => elem.dispatchEvent(new Event("js_svg_loaded")), 50);
+            return [elem, args]
+        },
+            (elem, args) => args[0] == "viewBox")
+
+        uDark.functionWrapper(HTMLUnknownElement, HTMLUnknownElement.prototype.setAttribute, "setAttribute", function (elem, args) {
+            elem.addEventListener("js_svg_loaded", z => uDark.frontEditSVG(elem));
+            setTimeout(() => elem.dispatchEvent(new Event("js_svg_loaded")), 50);
+            return [elem, args]
+        },
+            (elem, args) => args[0] == "viewBox" && elem.tagName == "SVG")
+
+        // uDark.valuePrototypeEditor(SVGSVGElement, "viewBox", (elem, value) => {
+        //   console.log("Viewbox set on",elem,value);
+        //   return value;
+        // })
+
+
+
+        // UserStyles.org and gitlab append text nodes to style elements, this is why we set the textContent of these items
+        // uDark.functionPrototypeEditor(Element,Element.prototype.attachShadow, (elem, args) => {
+        //   args[0].mode = "open";
+
+        //   console.log("Attach shadow",elem,args);
+        //   return args;
+        // },x=>true,x=>{
+        //   console.log("Attached shadow",x);
+        //   let aCSS=new CSSStyleSheet();
+        //   aCSS.p_ud_replaceSync(uDark.inject_css_override);
+        //   x.adoptedStyleSheets=[aCSS];
+        //   return x;
+
+        // })
+
+        uDark.functionPrototypeEditor(DOMParser, DOMParser.prototype.parseFromString, (elem, args) => {
+            // Catching the parsing of the document, to edit it before it's inserted in the DOM, is in the philosophy of UltimaDark of doing things at key moments.
+            // parseFromString is a key moment, as it manipulates strings. insertBefore, used with an instanciated element for instance is not a key moment, as we could have edited the element before.
+            let strict_xml_val = args[1] && args[1].includes("xml") ? args[1] : false;
+            args[0] = uDark.frontEditHTML("ANY_ELEMENT", args[0], undefined, { STRICT_XML: strict_xml_val })
+            // console.log(args)
+            return args
+        }, (text, type) => ["text/html", "application/xhtml+xml"].includes(type))
+        uDark.functionPrototypeEditor(Node, [ // So far we assume the CSS inserted in HTMStyleElements via appendChild or insertBefore are valid. This migh not always be the case, this is to keep in mind.
+            Node.prototype.appendChild,
+            Node.prototype.insertBefore
+        ], (elem, args) => {
+            (args[0].o_ud_textContent = uDark.edit_str(args[0].textContent));
+            return args
+        }, function () { return this instanceof HTMLStyleElement });
+        // Canvas 2D full tracer (methods + properties) — ES2020
+        if (0) {
+            (() => {
+                const P = CanvasRenderingContext2D.prototype;
+
+                // Sauvegardes pour un unpatch propre
+                const Originals = new Map(); // key: name, value: { type: 'method'|'prop', desc|fn }
+
+                // 1) Wrap des méthodes
+                for (const name of Object.getOwnPropertyNames(P)) {
+                    const desc = Object.getOwnPropertyDescriptor(P, name);
+                    if (!desc) continue;
+
+                    if (typeof desc.value === "function") {
+                        const origFn = desc.value;
+                        // Évite de re-wrapper si déjà fait
+                        if (Originals.has(name)) continue;
+
+                        function wrapped(...args) {
+                            try { console.log("[Canvas2D call]", name, args); } catch { }
+                            // Important : conserver le this natif
+                            return origFn.apply(this, args);
+                        }
+
+                        // Préserver toString pour éviter les détections grossières
+                        try {
+                            Object.defineProperty(wrapped, "toString", {
+                                configurable: true,
+                                value: Function.prototype.toString.bind(origFn)
+                            });
+                        } catch { }
+
+                        Originals.set(name, { type: "method", fn: origFn });
+
+                        // Redéfinir en conservant les attributs
+                        Object.defineProperty(P, name, {
+                            ...desc,
+                            value: wrapped
+                        });
+                    }
+                }
+
+                // 2) Wrap des propriétés (get/set) — ex: fillStyle, font, globalAlpha…
+                const protoDescs = Object.getOwnPropertyDescriptors(P);
+                for (const [name, desc] of Object.entries(protoDescs)) {
+                    const hasGetter = typeof desc.get === "function";
+                    const hasSetter = typeof desc.set === "function";
+                    if (!hasGetter && !hasSetter) continue;
+
+                    // Sauvegarder une seule fois
+                    if (!Originals.has(name)) Originals.set(name, { type: "prop", desc });
+
+                    // Créer des wrappers qui délèguent aux accesseurs d’origine
+                    const wrappedDesc = { ...desc };
+                    if (hasGetter) {
+                        const g = desc.get;
+                        wrappedDesc.get = function () {
+                            const v = g.call(this);
+                            // Optionnel: log lecture (verbeux)
+                            // try { console.log("[Canvas2D get]", name, v); } catch {}
+                            return v;
+                        };
+                        try {
+                            Object.defineProperty(wrappedDesc.get, "toString", {
+                                configurable: true,
+                                value: Function.prototype.toString.bind(g)
+                            });
+                        } catch { }
+                    }
+                    if (hasSetter) {
+                        const s = desc.set;
+                        wrappedDesc.set = function (v) {
+                            const before = hasGetter ? desc.get.call(this) : undefined;
+                            try { console.log("[Canvas2D set]", name, { from: before, to: v }); } catch { }
+                            if (name == "fillStyle") {
+                                v = `hsl(${360 * Math.random()}deg,100%,75%)`;
+                            }
+                            if (name == "strokeStyle") {
+                                v = `hsl(${360 * Math.random()}deg,100%,75%)`;
+                            }
+                            return s.call(this, v);
+                        };
+                        try {
+                            Object.defineProperty(wrappedDesc.set, "toString", {
+                                configurable: true,
+                                value: Function.prototype.toString.bind(s)
+                            });
+                        } catch { }
+                    }
+
+                    try {
+                        Object.defineProperty(P, name, wrappedDesc);
+                    } catch {
+                        // Certains moteurs refusent la redéfinition : ignorer proprement
+                    }
+                }
+
+                // 3) Unpatch optionnel
+                window.__unpatchCanvas2DPrototypeTracer = function () {
+                    for (const [name, rec] of Originals.entries()) {
+                        if (rec.type === "method") {
+                            const desc = Object.getOwnPropertyDescriptor(P, name);
+                            if (desc && typeof desc.value === "function") {
+                                Object.defineProperty(P, name, { ...desc, value: rec.fn });
+                            }
+                        } else if (rec.type === "prop") {
+                            try { Object.defineProperty(P, name, rec.desc); } catch { }
+                        }
+                    }
+                    Originals.clear();
+                };
+            })();
+
+        }
+        else if (1) {
+            {
+                uDark.functionPrototypeEditor(CanvasRenderingContext2D, [
+                    CanvasRenderingContext2D.prototype.createLinearGradient,
+                    CanvasRenderingContext2D.prototype.createRadialGradient,
+                    CanvasRenderingContext2D.prototype.createConicGradient
+                ], (elem, args) => args, true,
+                    (result, context2D, watcher_result, args, originalFunction) => {
+                        console.log("Gradient created", result, context2D, args, originalFunction);
+                        result.lightGradient = originalFunction.apply(context2D, args);
+                        return result;
+                    }
+                );
+                uDark.functionPrototypeEditor(CanvasGradient, CanvasGradient.prototype.addColorStop, (elem, args) => {
+                    let light = uDark.eget_color(args[1], uDark.revert_rgba);
+                    let dark = uDark.eget_color(args[1], uDark.rgba);
+                    console.log("Gradient color stop", elem, args, light, dark);
+                    elem.lightGradient.o_ud_addColorStop(args[0], light);
+                    args[1] = dark;
+                    return args;
+                });
+            }
+
+            let gradientCompat = (light, elem) => {
+                if (elem.fillStyle.lightGradient) {
+                    if (light) {
+                        elem.fillStyle = elem.fillStyle.lightGradient;
+                    }
+                    return true;
+                }
+
+            }
+            let patternCompat = (elem) => {
+                return elem.fillStyle instanceof CanvasPattern;
+            }
+
+
+            let darken_canvas = (elem, args) => {
+
+                if (gradientCompat(false, elem) || patternCompat(elem)) {
+                    return args;
+                }
+
+                elem.currentFillStyle = elem.fillStyle;
+                elem.fillStyle = uDark.eget_color(elem.fillStyle, uDark.rgba);
+                // // elem.fillStyle = "lime";
+                return args
+            }
+            let lighten_canvas = (elem, args) => {
+
+                if (gradientCompat(true, elem) || patternCompat(elem)) {
+                    return args;
+                }
+                elem.currentFillStyle = elem.fillStyle;
+                elem.fillStyle = uDark.eget_color(elem.fillStyle, uDark.revert_rgba);
+                return args
+            }
+            let darken_canvas_stroke = (elem, args) => {
+
+                if (gradientCompat(false, elem) || patternCompat(elem)) {
+                    return args;
+                }
+                elem.currentStrokeStyle = elem.strokeStyle;
+                elem.strokeStyle = uDark.eget_color(elem.strokeStyle, uDark.rgba);
+                return args
+            }
+            let lighten_canvas_stroke = (elem, args) => {
+
+                if (gradientCompat(true, elem) || patternCompat(elem)) {
+                    return args;
+                }
+                elem.currentStrokeStyle = elem.strokeStyle;
+                elem.strokeStyle = uDark.eget_color(elem.strokeStyle, uDark.revert_rgba);
+                return args
+            }
+            // uDark.valuePrototypeEditor(CanvasRenderingContext2D, "fillStyle", (elem, value) => {
+            //   elem.refilled=true
+            //   return value; // uDark.edit_str(value)
+            // })
+            //  uDark.valuePrototypeEditor(CanvasRenderingContext2D, "strokeStyle", (elem, value) => {
+            //   elem.restroked=true
+            //     // return "lime"
+            //   if(value == "#c0c0c0" || value == "rgba(192,192,192,1)")
+            //     {
+            //       console.warn("Stroke style set to silver, changing to lime");
+            //     return "lime"
+            //   }
+            //   if(value == "rgba(196,199,197,1)")
+            //   {
+            //     //red
+            //     console.warn("Stroke style set to red, changing to red");
+            //     return "red";
+            //   }
+            //   if(value == "rgba(31,31,31,0.133)")
+            //   {
+            //     console.warn("Stroke style set to dark gray, changing to blue");
+            //     return "blue";
+            //   }
+            //   console.log("Stroke style set to", value);
+            //   return value; // uDark.edit_str(value)
+
+            // })
+            // uDark.functionPrototypeEditor(HTMLCanvasElement , HTMLCanvasElement.prototype.getContext, (elem, args) => {
+            //   elem.fillStyle = "red";
+            //   elem.strokeStyle = "red";
+            //   return args;
+            // })
+
+            // uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.stroke, (elem, args  ) => {
+            //   console.log("CanvasRenderingContext2D.prototype.stroke", elem, args,elem.strokeStyle);
+            //   // elem.o_ud_strokeStyle = "yellow";
+            //   elem.o_ud_strokeStyle = uDark.eget_color(elem.strokeStyle, uDark.revert_rgba);
+            //   return args;
+            // })
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.fillRect, darken_canvas)
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.fill, darken_canvas)
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.fillText, lighten_canvas)
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.stroke, lighten_canvas_stroke)
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.strokeText, darken_canvas_stroke)
+            uDark.functionPrototypeEditor(CanvasRenderingContext2D, CanvasRenderingContext2D.prototype.strokeRect, darken_canvas_stroke)
+        }
+        // FINALLY CNN Use this one (webpack)!!!!
+        uDark.valuePrototypeEditor(Node, "textContent", (elem, value) => {
+            if (!elem.nonce) {
+                elem.o_ud_setAttribute("nonce", uDark.byPassCSPNonce); // To bypass CSP that can block our css when we edit style elements textContent, we set a nonce that we will add to our injected css rules, this way we can bypass the hash check and still have some level of security against other css injections
+            }
+            return uDark.edit_str(value)
+
+        }, (elem, value) => elem instanceof HTMLStyleElement || elem instanceof SVGStyleElement);
+
+        uDark.valuePrototypeEditor(HTMLMetaElement, "content", (elem, value) => {
+            return "dark"
+        }, (elem, value) => elem.id == "ud-meta-dark");
+
+
+        uDark.functionWrapper(HTMLMetaElement, HTMLMetaElement.prototype.setAttribute, "setAttribute", function (elem, args) {
+            args[1] = "dark";
+            return [elem, args]
+        },
+            (elem, args) => elem.id == "ud-meta-dark" && args[0] == "content")
+
+        uDark.valuePrototypeEditor(CSS2Properties, "fill", (elem, value) => {
+            if (!console.warn("Fill not reimplented", elem, value)) { return value };
+            let randIdentifier = Math.random().toString().slice(2)
+            elem.floodColor = `var(--${randIdentifier})`
+            return uDark.get_fill_for_svg_elem(elem.getRootNode().querySelector(`[style*='${randIdentifier}]`) ||
+                document.createElement('zz'), value || "currentColor", {
+                notableInfos: {}
+            });
+        })
+        // uDark.valuePrototypeEditor(CSSRule, "cssText", (elem, value) => uDark.edit_str(value)) // As far as I know, this is not affects to edit css text directly on CSSRule
+        uDark.valuePrototypeEditor(CSSStyleDeclaration, "cssText", (elem, value) => uDark.edit_str_nochunk(value)) // However this one does ( on elements.style.cssText and on cssRules.style.cssText, it keeps the selector as is, but the css is edited: 'color: red')
+
+        { // Note the difference in wich arg is edited in following functions: we-cant-group-them !
+
+            uDark.functionPrototypeEditor(CSSStyleSheet, CSSStyleSheet.prototype.addRule, (elem, args) => [args[0], uDark.edit_str(args[1])])
+            // Facebook classic uses insertRule
+            uDark.functionPrototypeEditor(CSSStyleSheet, CSSStyleSheet.prototype.insertRule, (elem, args) => [uDark.edit_str(args[0]), args[1] || 0])
+
+        }
+
+
+        // uDark.valuePrototypeEditor(HTMLImageElement, "src", (elem, value) => {
+        //   console.log(elem, value,"src","edited");
+        //   uDark.registerBackgroundItem(false, `img[src='${value}']`,false)
+        //   return value;
+        // });
+
+        // W3C uses this one
+
+        let bg_websiteEditFn = (elem, value) => {
+            let edited = uDark.edit_all_cssRule_colors_cb({
+                style: elem
+            }, "background", value, {}, {
+                l_var: "--uDark_transform_darken",
+                prefix_vars: "bg",
+                raw_text: true,
+                no_edit: true,
+                js_static_transform: uDark.rgba
+            });
+            return edited;
+
+
+        }
+
+
+        uDark.valuePrototypeEditor(CSS2Properties, "background", bg_websiteEditFn)
+
+        uDark.valuePrototypeEditor(CSS2Properties, "backgroundColor", bg_websiteEditFn)
+        uDark.valuePrototypeEditor(CSS2Properties, "background-color", bg_websiteEditFn)
+
+
+
+        uDark.valuePrototypeEditor(CSS2Properties, "color", (elem, value) => {
+
+            let edited = uDark.edit_all_cssRule_colors_cb({
+                style: elem
+            }, "color", value, {}, {
+                l_var: "--uDark_transform_lighten",
+                h_var: "--uDark_transform_text_hue",
+                fastValue0: true,
+                no_edit: true,
+                js_static_transform: uDark.revert_rgba
+            });
+            elem.columnRuleColor = value;
+            elem.o_ud_setProperty("--stealthColor", elem.columnRuleColor)
+            return edited;
+        }, false, false,
+            elem => elem.getPropertyValue("--stealthColor") || elem.o_ud_color // Bein steath sometime is mandatory, like for https://www.startpage.com/
+        );
+        uDark.valuePrototypeEditor([HTMLElement, SVGElement], "style", (elem, value) => uDark.edit_str_nochunk(value)); // Care with "style and eget, this cause recursions"
+        // TODO: Support CSS url(data-image) in all image relevant CSS properties like background-image etc
+
+        uDark.valuePrototypeEditor(HTMLElement, "innerText", (elem, value) => {
+            return uDark.edit_str(value)
+        }, (elem, value) => value && (elem instanceof HTMLStyleElement)); // No innerText for SVGStyleElement, it's an HTMLElement feature
+
+        WebsitesOverrideScript.installDocumentWriteEngine();
+
+
+        console.info("UltimaDark", "Websites overrides ready", window, "elapsed:", performance.now() - start);
+
+    }
+static installDocumentWriteEngine = function () {
+    if (uDark.documentWriteEngineInstalled) {
+        return;
+    }
+
+    uDark.documentWriteEngineInstalled = true;
+
+    const documentPrototype =
+        Document.prototype;
+
+    const originalOpen =
+        documentPrototype.open;
+
+    const originalWrite =
+        documentPrototype.write;
+
+    const originalWriteln =
+        documentPrototype.writeln;
+
+    const originalClose =
+        documentPrototype.close;
+
+    /*
+     * État propre à chaque Document.
+     */
+    const documentStates =
+        new WeakMap();
+
+    /*
+     * Conserve la source brute et le dernier résultat édité
+     * de chaque <style>.
+     *
+     * Cela permet de gérer un style réparti sur plusieurs
+     * appels à document.write() sans rééditer le préfixe
+     * déjà transformé.
+     */
+    const styleEditStates =
+        new WeakMap();
+
+    const createBranch = () => ({
+        root: null,
+        chain: []
+    });
+
+    const createState = doc => ({
+        /*
+         * Sous-arbres déjà traités pendant le cycle courant.
+         */
+        editedSubtrees:
+            new WeakSet(),
+
+        /*
+         * Racines à traiter ou à réessayer.
+         */
+        pendingRoots:
+            new Set(),
+
+        /*
+         * Frontières indépendantes du head et du body.
+         *
+         * Une racine peut avoir été adoptée dans un autre
+         * Document tout en restant dans la pile du parser.
+         */
+        branches: {
+            head: createBranch(),
+            body: createBranch()
+        },
+
+        processing:
+            false,
+
+        /*
+         * Une opération réentrante peut demander qu'un parcours
+         * complet soit effectué par le traitement extérieur.
+         */
+        processWholeDocument:
+            false,
+
+        /*
+         * close() peut être appelé pendant un traitement.
+         * Le reset sera alors effectué à la sortie du parcours.
+         */
+        resetAfterProcessing:
+            false,
+
+        /*
+         * Le premier write de la session nécessite un traitement
+         * complet. Les suivants utilisent les racines détectées.
+         */
+        initialized:
+            false,
+
+        active:
+            false,
+
+        /*
+         * Permet de détecter le remplacement du document.
+         */
+        documentElement:
+            doc.documentElement
+    });
+
+    const getState = doc => {
+        let state =
+            documentStates.get(doc);
+
+        if (!state) {
+            state =
+                createState(doc);
+
+            documentStates.set(
+                doc,
+                state
+            );
+        }
+
+        return state;
+    };
+
+    const resetState = doc => {
+        const state =
+            createState(doc);
+
+        documentStates.set(
+            doc,
+            state
+        );
+
+        return state;
+    };
+
+    const synchronizeState = doc => {
+        const state =
+            getState(doc);
+
+        /*
+         * Le documentElement a été remplacé :
+         * nouvelle session de parsing.
+         */
+        if (
+            state.documentElement !==
+            doc.documentElement
+        ) {
+            return resetState(doc);
+        }
+
+        return state;
+    };
+
+    const installMethod = (
+        name,
+        original,
+        handler
+    ) => {
+        const descriptor =
+            Object.getOwnPropertyDescriptor(
+                documentPrototype,
+                name
+            );
+
+        const wrapper =
+            new Proxy(
+                original,
+                {
+                    apply(
+                        target,
+                        thisArg,
+                        args
+                    ) {
+                        return handler(
+                            target,
+                            thisArg,
+                            args
+                        );
+                    },
+
+                    get(
+                        target,
+                        property,
+                        receiver
+                    ) {
+                        if (
+                            property ===
+                            "toString"
+                        ) {
+                            return Function.prototype
+                                .toString
+                                .bind(target);
+                        }
+
+                        return Reflect.get(
+                            target,
+                            property,
+                            receiver
+                        );
+                    }
+                }
+            );
+
+        Object.defineProperty(
+            documentPrototype,
+            name,
+            {
+                ...descriptor,
+                value: wrapper
+            }
+        );
+    };
+
+    const collectStyles = root => {
+        const styles = [];
+
+        if (
+            root instanceof
+            HTMLStyleElement
+        ) {
+            styles.push(root);
+        }
+
+        styles.push(
+            ...root.querySelectorAll(
+                "style"
+            )
+        );
+
+        return styles;
+    };
+
+    /*
+     * Détermine si l'élément appartient à un sous-arbre
+     * qui sera exclu par transformDOMSubtree().
+     *
+     * Un style appartenant à un sous-arbre exclu ne doit
+     * surtout pas être temporairement remis à sa source brute.
+     */
+    const isInsideExcludedSubtree = (
+        element,
+        root,
+        state
+    ) => {
+        let current =
+            element;
+
+        while (
+            current instanceof Element
+        ) {
+            if (
+                state.editedSubtrees.has(
+                    current
+                )
+            ) {
+                return true;
+            }
+
+            if (current === root) {
+                break;
+            }
+
+            current =
+                current.parentElement;
+        }
+
+        return false;
+    };
+
+    /*
+     * Prépare les styles avant le traitement du sous-arbre.
+     *
+     * Exemple :
+     *
+     * write("<style>body{background:#fff")
+     * write(";color:#000}</style>")
+     *
+     * Après le premier write, le début du style est édité.
+     * Le parser ajoute ensuite le suffixe brut à ce texte édité.
+     *
+     * On reconstruit donc :
+     *
+     * ancienne source brute + nouveau suffixe brut
+     *
+     * avant de transformer le style complet une seule fois.
+     */
+    const prepareStylesForEdit = (
+        root,
+        state
+    ) => {
+        const preparedStyles = [];
+
+        for (
+            const style of
+            collectStyles(root)
+        ) {
+            /*
+             * Le sous-arbre sera ignoré par
+             * excludedSubtrees : ne pas toucher à son CSS.
+             */
+            if (
+                isInsideExcludedSubtree(
+                    style,
+                    root,
+                    state
+                )
+            ) {
+                continue;
+            }
+
+            const originalText =
+                style.textContent;
+
+            const previous =
+                styleEditStates.get(style);
+
+            let rawText =
+                originalText;
+
+            if (previous) {
+                if (
+                    originalText ===
+                    previous.editedText
+                ) {
+                    /*
+                     * Style inchangé inclus dans une racine
+                     * plus grande qui doit être retraitée.
+                     */
+                    rawText =
+                        previous.rawText;
+                } else if (
+                    originalText.startsWith(
+                        previous.editedText
+                    )
+                ) {
+                    /*
+                     * Le parser a prolongé la précédente version
+                     * transformée avec un suffixe encore brut.
+                     */
+                    rawText =
+                        previous.rawText +
+                        originalText.slice(
+                            previous.editedText.length
+                        );
+                }
+
+                /*
+                 * Sinon, le contenu a été modifié par un autre
+                 * mécanisme et devient la nouvelle source brute.
+                 */
+            }
+
+            if (
+                originalText !==
+                rawText
+            ) {
+                style.textContent =
+                    rawText;
+            }
+
+            preparedStyles.push({
+                style,
+                rawText,
+
+                /*
+                 * Texte réellement actif avant la tentative.
+                 * Il sera restauré si l'édition échoue.
+                 */
+                originalText
+            });
+        }
+
+        return preparedStyles;
+    };
+
+    const saveEditedStyles =
+        preparedStyles => {
+            for (
+                const {
+                    style,
+                    rawText
+                } of preparedStyles
+            ) {
+                styleEditStates.set(
+                    style,
+                    {
+                        rawText,
+
+                        editedText:
+                            style.textContent
+                    }
+                );
+            }
+        };
+
+    const restorePreparedStyles =
+        preparedStyles => {
+            for (
+                const {
+                    style,
+                    originalText
+                } of preparedStyles
+            ) {
+                try {
+                    /*
+                     * En cas d'erreur, restaure exactement
+                     * le CSS qui était actif avant la tentative.
+                     */
+                    style.textContent =
+                        originalText;
+                } catch {
+                    /*
+                     * L'erreur principale est déjà remontée
+                     * par editSubtree().
+                     */
+                }
+            }
+        };
+
+    const editSubtree = (
+        root,
+        state
+    ) => {
+        if (
+            !(root instanceof Element) ||
+            state.editedSubtrees.has(root)
+        ) {
+            return true;
+        }
+
+        const preparedStyles =
+            prepareStylesForEdit(
+                root,
+                state
+            );
+
+        try {
+            uDark.transformDOMSubtree(
+                root,
+                undefined,
+                {
+                    fromDocumentWrite:
+                        true,
+
+                    excludedSubtrees:
+                        state.editedSubtrees
+                }
+            );
+
+            saveEditedStyles(
+                preparedStyles
+            );
+
+            state.editedSubtrees.add(
+                root
+            );
+
+            return true;
+        } catch (error) {
+            /*
+             * Ne laisse pas un style temporairement brut
+             * ou partiellement transformé après un échec.
+             */
+            restorePreparedStyles(
+                preparedStyles
+            );
+
+            uDark.error(
+                "document.write subtree edit failed",
+                root,
+                error
+            );
+
+            return false;
+        }
+    };
+
+    /*
+     * Supprime :
+     *
+     * - les doublons ;
+     * - les descendants déjà couverts par une racine ancêtre.
+     */
+    const normalizeRoots = roots => {
+        const uniqueRoots = [
+            ...new Set(
+                roots.filter(
+                    root =>
+                        root instanceof Element
+                )
+            )
+        ];
+
+        return uniqueRoots.filter(
+            root =>
+                !uniqueRoots.some(
+                    candidate =>
+                        candidate !== root &&
+                        candidate.contains(root)
+                )
+        );
+    };
+
+    /*
+     * Traite les racines détectées.
+     *
+     * Un parcours complet n'est effectué que lors du premier
+     * write d'une session ou après remplacement du document.
+     */
+    const processDocument = (
+        doc,
+        wholeDocument = false
+    ) => {
+        const state =
+            getState(doc);
+
+        if (!state.active) {
+            return;
+        }
+
+        /*
+         * Une opération imbriquée ne lance pas un second parcours.
+         * Elle ajoute ses racines à la file du traitement extérieur.
+         */
+        if (state.processing) {
+            if (wholeDocument) {
+                state.processWholeDocument =
+                    true;
+            }
+
+            return;
+        }
+
+        state.processing = true;
+
+        let failed =
+            false;
+
+        try {
+            let mustProcessWholeDocument =
+                wholeDocument ||
+                state.processWholeDocument;
+
+            state.processWholeDocument =
+                false;
+
+            do {
+                const roots = [];
+
+                if (
+                    mustProcessWholeDocument &&
+                    doc.documentElement
+                ) {
+                    roots.push(
+                        doc.documentElement
+                    );
+                }
+
+                roots.push(
+                    ...state.pendingRoots
+                );
+
+                state.pendingRoots.clear();
+
+                const normalizedRoots =
+                    normalizeRoots(roots);
+
+                for (
+                    const root of
+                    normalizedRoots
+                ) {
+                    if (
+                        !editSubtree(
+                            root,
+                            state
+                        )
+                    ) {
+                        /*
+                         * Ne perd pas une racine ayant échoué.
+                         * Elle sera réessayée lors du prochain
+                         * write, writeln ou close.
+                         */
+                        state.pendingRoots.add(
+                            root
+                        );
+
+                        failed = true;
+                    }
+                }
+
+                /*
+                 * Évite de boucler immédiatement sur une racine
+                 * qui échoue systématiquement.
+                 */
+                if (failed) {
+                    break;
+                }
+
+                mustProcessWholeDocument =
+                    state.processWholeDocument;
+
+                state.processWholeDocument =
+                    false;
+            } while (
+                mustProcessWholeDocument ||
+                state.pendingRoots.size
+            );
+
+            if (!failed) {
+                state.initialized =
+                    true;
+            }
+
+            state.documentElement =
+                doc.documentElement;
+        } finally {
+            state.processing = false;
+
+            /*
+             * Un close() réentrant a demandé la fin de la
+             * session pendant que cet état était encore utilisé.
+             */
+            if (
+                state.resetAfterProcessing
+            ) {
+                resetState(doc);
+            }
+        }
+    };
+
+    /*
+     * Snapshot local de la frontière droite.
+     *
+     * Aucun accès récursif à textContent.
+     */
+    const snapshotNode = node => {
+        const lastChild =
+            node.lastChild;
+
+        return {
+            node,
+
+            childNodesLength:
+                node.childNodes.length,
+
+            lastChild,
+
+            /*
+             * Couvre la continuation d'un Text existant,
+             * notamment dans un <style>.
+             */
+            lastTextLength:
+                lastChild?.nodeType ===
+                Node.TEXT_NODE
+                    ? lastChild.data.length
+                    : -1
+        };
+    };
+
+    const nodeChanged = snapshot => {
+        const node =
+            snapshot.node;
+
+        const lastChild =
+            node.lastChild;
+
+        return (
+            node.childNodes.length !==
+                snapshot.childNodesLength ||
+
+            lastChild !==
+                snapshot.lastChild ||
+
+            (
+                lastChild?.nodeType ===
+                    Node.TEXT_NODE &&
+
+                lastChild.data.length !==
+                    snapshot.lastTextLength
+            )
+        );
+    };
+
+    /*
+     * Approximation synchrone de la branche encore ouverte.
+     *
+     * Le moteur suit volontairement uniquement la frontière
+     * droite. Les autres hooks UltimaDark couvrent les
+     * changements effectués ailleurs.
+     */
+    const getRightmostChain = root => {
+        const chain = [];
+
+        let node =
+            root;
+
+        while (
+            node instanceof Element
+        ) {
+            chain.push(node);
+
+            node =
+                node.lastElementChild;
+        }
+
+        return chain;
+    };
+
+    const snapshotChain = chain =>
+        chain.map(snapshotNode);
+
+    /*
+     * Récupère :
+     *
+     * - les nouvelles racines ajoutées après l'ancien
+     *   dernier enfant ;
+     * - les parents dont le dernier Text a été prolongé.
+     */
+    const collectChangedRoots =
+        snapshots => {
+            const roots = [];
+
+            for (
+                const snapshot of
+                snapshots
+            ) {
+                if (
+                    !nodeChanged(snapshot)
+                ) {
+                    continue;
+                }
+
+                const node =
+                    snapshot.node;
+
+                const lastChild =
+                    node.lastChild;
+
+                const structureChanged =
+                    node.childNodes.length !==
+                        snapshot.childNodesLength ||
+
+                    lastChild !==
+                        snapshot.lastChild;
+
+                if (structureChanged) {
+                    let addedNode =
+                        null;
+
+                    if (
+                        !snapshot.lastChild
+                    ) {
+                        addedNode =
+                            node.firstChild;
+                    } else if (
+                        snapshot.lastChild
+                            .parentNode === node
+                    ) {
+                        addedNode =
+                            snapshot.lastChild
+                                .nextSibling;
+                    }
+
+                    let foundRoot =
+                        false;
+
+                    while (addedNode) {
+                        if (
+                            addedNode instanceof
+                            Element
+                        ) {
+                            roots.push(
+                                addedNode
+                            );
+
+                            foundRoot =
+                                true;
+                        } else if (
+                            addedNode.nodeType ===
+                            Node.TEXT_NODE
+                        ) {
+                            /*
+                             * Le texte appartient directement
+                             * au parent suivi.
+                             */
+                            roots.push(node);
+
+                            foundRoot =
+                                true;
+                        }
+
+                        addedNode =
+                            addedNode.nextSibling;
+                    }
+
+                    /*
+                     * Remplacement, retrait, adoption ou cas
+                     * impossible à reconstruire localement.
+                     */
+                    if (!foundRoot) {
+                        roots.push(node);
+                    }
+
+                    continue;
+                }
+
+                /*
+                 * Même objet Text, mais contenu prolongé.
+                 */
+                if (
+                    lastChild?.nodeType ===
+                        Node.TEXT_NODE &&
+
+                    lastChild.data.length !==
+                        snapshot.lastTextLength
+                ) {
+                    roots.push(node);
+                }
+            }
+
+            return normalizeRoots(roots);
+        };
+
+    const captureBranch = branch => {
+        const chain = [
+            ...(branch?.chain ?? [])
+        ];
+
+        return {
+            root:
+                branch?.root ?? null,
+
+            chain,
+
+            snapshots:
+                snapshotChain(chain)
+        };
+    };
+
+    const captureZone = (
+        doc,
+        state,
+        zone
+    ) => {
+        const container =
+            doc[zone];
+
+        return {
+            container,
+
+            containerSnapshot:
+                container
+                    ? snapshotNode(container)
+                    : null,
+
+            branch:
+                captureBranch(
+                    state.branches[zone]
+                )
+        };
+    };
+
+    const captureParsingContext = (
+        doc,
+        state
+    ) => ({
+        documentElement:
+            doc.documentElement,
+
+        head:
+            captureZone(
+                doc,
+                state,
+                "head"
+            ),
+
+        body:
+            captureZone(
+                doc,
+                state,
+                "body"
+            )
+    });
+
+    const queueRoots = (
+        state,
+        roots
+    ) => {
+        for (
+            const root of
+            roots
+        ) {
+            state.pendingRoots.add(
+                root
+            );
+        }
+    };
+
+    /*
+     * Calcule la prochaine frontière avant toute modification
+     * réalisée par transformDOMSubtree().
+     */
+    const computeNextBranch = (
+        zoneContext,
+        currentContainer,
+        sameDocument,
+        branchChanged
+    ) => {
+        if (!sameDocument) {
+            const root =
+                currentContainer
+                    ?.lastElementChild ??
+                null;
+
+            return {
+                root,
+
+                chain:
+                    root
+                        ? getRightmostChain(
+                            root
+                        )
+                        : []
+            };
+        }
+
+        const containerWasReplaced =
+            currentContainer !==
+            zoneContext.container;
+
+        const containerChanged =
+            containerWasReplaced ||
+
+            (
+                zoneContext.containerSnapshot
+                    ? nodeChanged(
+                        zoneContext
+                            .containerSnapshot
+                    )
+                    : Boolean(
+                        currentContainer
+                            ?.lastChild
+                    )
+            );
+
+        /*
+         * Une nouvelle racine top-level est apparue
+         * dans le conteneur.
+         */
+        if (
+            containerChanged &&
+            currentContainer
+                ?.lastElementChild
+        ) {
+            const root =
+                currentContainer
+                    .lastElementChild;
+
+            return {
+                root,
+
+                chain:
+                    getRightmostChain(
+                        root
+                    )
+            };
+        }
+
+        /*
+         * Aucun nouveau top-level, mais le parser a continué
+         * dans l'ancienne racine, éventuellement exportée.
+         */
+        if (
+            zoneContext.branch.root &&
+            branchChanged
+        ) {
+            return {
+                root:
+                    zoneContext.branch.root,
+
+                chain:
+                    getRightmostChain(
+                        zoneContext
+                            .branch
+                            .root
+                    )
+            };
+        }
+
+        /*
+         * Aucun changement : conserve la candidate précédente.
+         */
+        return {
+            root:
+                zoneContext.branch.root,
+
+            chain: [
+                ...zoneContext.branch.chain
+            ]
+        };
+    };
+
+    /*
+     * Handler commun à write(), writeln() et close().
+     *
+     * close() peut également flusher du contenu dans une
+     * frontière précédemment exportée.
+     */
+    const parserMutationHandler = (
+        original,
+        doc,
+        args,
+        closing = false
+    ) => {
+        const previousState =
+            getState(doc);
+
+        const context =
+            captureParsingContext(
+                doc,
+                previousState
+            );
+
+        /*
+         * Parsing natif.
+         *
+         * La synchronisation doit impérativement intervenir
+         * après cet appel.
+         */
+        const result =
+            Reflect.apply(
+                original,
+                doc,
+                args
+            );
+
+        const sameDocument =
+            doc.documentElement ===
+            context.documentElement;
+
+        const state =
+            synchronizeState(doc);
+
+        /*
+         * Nouveau cycle extérieur :
+         *
+         * - renouvelle editedSubtrees ;
+         * - conserve pendingRoots, qui peut contenir une
+         *   racine ayant échoué précédemment.
+         *
+         * En cas de réentrance, aucune structure partagée
+         * n'est réinitialisée.
+         */
+        if (!state.processing) {
+            state.editedSubtrees =
+                new WeakSet();
+        }
+
+        state.active =
+            true;
+
+        const mustProcessWholeDocument =
+            !sameDocument ||
+            !state.initialized;
+
+        let headBranchChanges = [];
+        let bodyBranchChanges = [];
+
+        if (sameDocument) {
+            /*
+             * Changements dans les anciennes frontières,
+             * même si leurs racines ont été adoptées dans
+             * un autre Document.
+             */
+            headBranchChanges =
+                collectChangedRoots(
+                    context.head
+                        .branch
+                        .snapshots
+                );
+
+            bodyBranchChanges =
+                collectChangedRoots(
+                    context.body
+                        .branch
+                        .snapshots
+                );
+
+            queueRoots(
+                state,
+                headBranchChanges
+            );
+
+            queueRoots(
+                state,
+                bodyBranchChanges
+            );
+
+            /*
+             * Changements top-level encore contenus
+             * dans le Document écrit.
+             */
+            if (
+                doc.head ===
+                context.head.container
+            ) {
+                if (
+                    context.head
+                        .containerSnapshot
+                ) {
+                    queueRoots(
+                        state,
+                        collectChangedRoots([
+                            context.head
+                                .containerSnapshot
+                        ])
+                    );
+                }
+            } else if (doc.head) {
+                state.pendingRoots.add(
+                    doc.head
+                );
+            }
+
+            if (
+                doc.body ===
+                context.body.container
+            ) {
+                if (
+                    context.body
+                        .containerSnapshot
+                ) {
+                    queueRoots(
+                        state,
+                        collectChangedRoots([
+                            context.body
+                                .containerSnapshot
+                        ])
+                    );
+                }
+            } else if (doc.body) {
+                state.pendingRoots.add(
+                    doc.body
+                );
+            }
+        }
+
+        /*
+         * Les frontières head et body sont calculées
+         * indépendamment avant l'édition.
+         */
+        state.branches = {
+            head:
+                computeNextBranch(
+                    context.head,
+                    doc.head,
+                    sameDocument,
+                    headBranchChanges.length >
+                        0
+                ),
+
+            body:
+                computeNextBranch(
+                    context.body,
+                    doc.body,
+                    sameDocument,
+                    bodyBranchChanges.length >
+                        0
+                )
+        };
+
+        /*
+         * L'édition passe exclusivement par processDocument().
+         */
+        processDocument(
+            doc,
+            mustProcessWholeDocument
+        );
+
+        if (closing) {
+            /*
+             * Si close() est réentrant, le traitement extérieur
+             * utilise encore cet état. Le reset doit être différé.
+             */
+            if (state.processing) {
+                state.resetAfterProcessing =
+                    true;
+            } else {
+                resetState(doc);
+            }
+        }
+
+        return result;
+    };
+
+    installMethod(
+        "open",
+        originalOpen,
+        (
+            original,
+            doc,
+            args
+        ) => {
+            const result =
+                Reflect.apply(
+                    original,
+                    doc,
+                    args
+                );
+
+            /*
+             * L'overload obsolète à trois arguments est
+             * un alias de window.open().
+             */
+            if (args.length < 3) {
+                resetState(doc);
+            }
+
+            return result;
+        }
+    );
+
+    installMethod(
+        "write",
+        originalWrite,
+        (
+            original,
+            doc,
+            args
+        ) =>
+            parserMutationHandler(
+                original,
+                doc,
+                args,
+                false
+            )
+    );
+
+    installMethod(
+        "writeln",
+        originalWriteln,
+        (
+            original,
+            doc,
+            args
+        ) =>
+            parserMutationHandler(
+                original,
+                doc,
+                args,
+                false
+            )
+    );
+
+    installMethod(
+        "close",
+        originalClose,
+        (
+            original,
+            doc,
+            args
+        ) =>
+            parserMutationHandler(
+                original,
+                doc,
+                args,
+                true
+            )
+    );
+
+    uDark.log(
+        "document.write support installed"
+    );
+};
+}
