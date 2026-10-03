@@ -526,7 +526,7 @@ class BrowserToolbarMiddleware(
             }
             is NavigateForwardClicked -> {
                 browserStore.state.selectedTab?.let {
-                    browserStore.dispatch(EngineAction.GoForwardAction(it.id))
+                    sessionUseCases.goForward.invoke(it.id)
                 }
                 next(action)
             }

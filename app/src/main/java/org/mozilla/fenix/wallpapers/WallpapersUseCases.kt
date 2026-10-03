@@ -154,7 +154,7 @@ class WallpapersUseCases(
 
             fileManager.clean(
                 currentWallpaper,
-                possibleWallpapers,
+                possibleWallpapers + bundledWallpapers,
             )
 
             val wallpapersWithUpdatedThumbnailState = possibleWallpapers.map { wallpaper ->
