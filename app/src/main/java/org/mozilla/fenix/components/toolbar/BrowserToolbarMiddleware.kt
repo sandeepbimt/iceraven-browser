@@ -852,6 +852,9 @@ class BrowserToolbarMiddleware(
                 ToolbarActionConfig(ToolbarAction.TabCounter) {
                     !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
                 },
+                ToolbarActionConfig(ToolbarAction.Forward) {
+                    !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
+                },
                 ToolbarActionConfig(ToolbarAction.Menu) {
                     !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
                 },

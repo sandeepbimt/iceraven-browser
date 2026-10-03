@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.wallpapers
 
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.util.Size
@@ -39,8 +40,9 @@ class WallpapersUseCases(
     storageRootDirectory: File,
     currentLocale: String,
     private val getDisplaySize: () -> Size,
+    private val context: Context? = null,
 ) {
-    private val downloader = WallpaperDownloader(storageRootDirectory, client)
+    private val downloader = WallpaperDownloader(storageRootDirectory, client, context = context)
     private val fileManager = WallpaperFileManager(storageRootDirectory)
 
     val fetchCurrentWallpaperUseCase: FetchCurrentWallpaperUseCase by lazy {
@@ -120,6 +122,8 @@ class WallpapersUseCases(
         private val currentLocale: String,
     ) : InitializeWallpapersUseCase {
         override suspend fun invoke() {
+            bundledWallpapers.forEach { downloader.ensureBundledWallpaperAssets(it) }
+
             val currentWallpaperName =
                 if (settings.shouldMigrateLegacyWallpaper) {
                     val migratedWallpaperName = migrationHelper.migrateLegacyWallpaper(settings.currentWallpaperName)
@@ -158,7 +162,7 @@ class WallpapersUseCases(
                 wallpaper.copy(thumbnailFileState = result)
             }
 
-            val defaultIncluded = defaultWallpapers + wallpapersWithUpdatedThumbnailState
+            val defaultIncluded = defaultWallpapers + bundledWallpapers + wallpapersWithUpdatedThumbnailState
             appStore.dispatch(AppAction.WallpaperAction.UpdateAvailableWallpapers(defaultIncluded))
         }
 
@@ -168,6 +172,8 @@ class WallpapersUseCases(
             } else {
                 listOf(Wallpaper.Default)
             }
+
+        private val bundledWallpapers = listOf(Wallpaper.SandfoxWallpaper1, Wallpaper.SandfoxWallpaper2)
 
         private fun Wallpaper.isExpired(): Boolean =
             when (this) {

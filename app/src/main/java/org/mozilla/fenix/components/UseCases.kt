@@ -138,13 +138,14 @@ class UseCases(
                 rootStorageDirectory to currentLocale
             }
         WallpapersUseCases(
-            context.components.settings,
-            rootStorageDirectory,
-            appStore.value,
-            client.value,
-            rootStorageDirectory,
-            currentLocale,
+            settings = context.components.settings,
+            filesDir = rootStorageDirectory,
+            appStore = appStore.value,
+            client = client.value,
+            storageRootDirectory = rootStorageDirectory,
+            currentLocale = currentLocale,
             getDisplaySize = { displaySize(context) },
+            context = context,
         )
     }
 

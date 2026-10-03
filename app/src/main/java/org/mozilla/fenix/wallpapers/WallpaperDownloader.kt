@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.wallpapers
 
+import android.content.Context
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.isSuccess
 import org.mozilla.fenix.BuildConfig
+import org.mozilla.fenix.R
 import org.mozilla.fenix.wallpapers.Wallpaper.Companion.getLocalPath
 
 /**
@@ -26,8 +28,31 @@ class WallpaperDownloader(
     private val storageRootDirectory: File,
     private val client: Client,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val context: Context? = null,
 ) {
     private val remoteHost = BuildConfig.WALLPAPER_URL
+
+    /** Ensures bundled Sandfox wallpapers are copied into the same storage layout used by remote wallpapers. */
+    suspend fun ensureBundledWallpaperAssets(wallpaper: Wallpaper) =
+        withContext(dispatcher) {
+            val resourceId =
+                when (wallpaper.name) {
+                    Wallpaper.SANDFOX_WALLPAPER_1 -> R.drawable.sandfox_wallpaper_1
+                    Wallpaper.SANDFOX_WALLPAPER_2 -> R.drawable.sandfox_wallpaper_2
+                    else -> return@withContext
+                }
+
+            val appContext = context ?: error("Context required for bundled wallpapers")
+            Wallpaper.ImageType.values().forEach { imageType ->
+                val localFile = File(storageRootDirectory, Wallpaper.getLocalPath(wallpaper.name, imageType))
+                if (!localFile.exists()) {
+                    localFile.parentFile?.mkdirs()
+                    appContext.resources.openRawResource(resourceId).use { input ->
+                        localFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
 
     /**
      * Downloads a wallpaper from the network. Will try to fetch 2 versions of each wallpaper: portrait and landscape.

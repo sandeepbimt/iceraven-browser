@@ -122,6 +122,7 @@ import org.mozilla.fenix.components.search.ApplicationSearchMiddleware
 import org.mozilla.fenix.components.search.SearchMigration
 import org.mozilla.fenix.components.search.SearchWidgetMiddleware
 import org.mozilla.fenix.downloads.DownloadService
+import org.mozilla.fenix.debug.SandfoxStartupTrace
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.gecko.GeckoProvider
@@ -255,12 +256,14 @@ class Core(
             }
         }
 
+        SandfoxStartupTrace.mark("GECKO_ENGINE_CREATE_START")
         GeckoEngine(
                 context = context,
                 defaultSettings = defaultSettings,
                 runtime = geckoRuntime,
             )
             .also {
+                SandfoxStartupTrace.mark("GECKO_ENGINE_CREATE_END")
                 WebCompatFeature.install(it)
             }
     }

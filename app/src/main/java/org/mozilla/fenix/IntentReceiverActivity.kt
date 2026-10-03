@@ -27,6 +27,7 @@ import org.mozilla.fenix.components.getType
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.customtabs.FennecWebAppIntentProcessor
 import org.mozilla.fenix.ext.isIntentInternal
+import org.mozilla.fenix.debug.SandfoxStartupTrace
 import org.mozilla.fenix.perf.MarkersActivityLifecycleCallbacks
 import org.mozilla.fenix.perf.StartupTimeline
 import org.mozilla.fenix.shortcut.NewTabShortcutIntentProcessor
@@ -41,6 +42,7 @@ class IntentReceiverActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // DO NOT MOVE ANYTHING ABOVE THIS getProfilerTime CALL.
         val startTimeProfiler = components.core.engine.profiler?.getProfilerTime()
+        SandfoxStartupTrace.mark("INTENT_RECEIVER_CREATE")
 
         // The intent property is nullable, but the rest of the code below
         // assumes it is not. If it's null, then we make a new one and open
@@ -61,8 +63,10 @@ class IntentReceiverActivity : Activity() {
         components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             super.onCreate(savedInstanceState)
         }
-
+        SandfoxStartupTrace.mark("INTENT_RECEIVER_SUPER_ON_CREATE")
+        SandfoxStartupTrace.mark("PWA_PROCESS_INTENT_START", "isPwa" to (intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP))
         processIntent(intent)
+        SandfoxStartupTrace.mark("PWA_PROCESS_INTENT_END")
 
         components.core.engine.profiler?.addMarker(
             MarkersActivityLifecycleCallbacks.MARKER_NAME,
@@ -70,6 +74,7 @@ class IntentReceiverActivity : Activity() {
             "IntentReceiverActivity.onCreate",
         )
         StartupTimeline.onActivityCreateEndIntentReceiver() // DO NOT MOVE ANYTHING BELOW HERE.
+        SandfoxStartupTrace.mark("INTENT_RECEIVER_COMPLETE")
     }
 
     fun processIntent(intent: Intent) {

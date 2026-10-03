@@ -61,8 +61,11 @@ data class Wallpaper(
         const val FIREFOX_COLLECTION = "firefox"
         const val DEFAULT = "default"
         const val EDGE_TO_EDGE = "edge-to-edge"
+        const val SANDFOX_WALLPAPER_1 = "sandfox-wallpaper-1"
+        const val SANDFOX_WALLPAPER_2 = "sandfox-wallpaper-2"
 
-        private val localWallpapers = listOf(DEFAULT, EDGE_TO_EDGE)
+        private val localWallpapers =
+            listOf(DEFAULT, EDGE_TO_EDGE, SANDFOX_WALLPAPER_1, SANDFOX_WALLPAPER_2)
 
         /*
          * Note: this collection could get out of sync with the version of it generated when fetching
@@ -120,6 +123,31 @@ data class Wallpaper(
                 thumbnailFileState = ImageFileState.Downloaded,
                 assetsFileState = ImageFileState.Downloaded,
             )
+
+        val SandfoxWallpaper1 =
+            Wallpaper(
+                name = SANDFOX_WALLPAPER_1,
+                collection = DefaultCollection,
+                textColor = 0xFFFFFFFF,
+                cardColorLight = 0xFFF5F5F5,
+                cardColorDark = 0xCC1F1F1F,
+                thumbnailFileState = ImageFileState.Downloaded,
+                assetsFileState = ImageFileState.Downloaded,
+            )
+
+        val SandfoxWallpaper2 =
+            Wallpaper(
+                name = SANDFOX_WALLPAPER_2,
+                collection = DefaultCollection,
+                textColor = 0xFFFFFFFF,
+                cardColorLight = 0xFFF5F5F5,
+                cardColorDark = 0xCC1F1F1F,
+                thumbnailFileState = ImageFileState.Downloaded,
+                assetsFileState = ImageFileState.Downloaded,
+            )
+
+        fun isBundledWallpaper(name: String): Boolean =
+            name == SANDFOX_WALLPAPER_1 || name == SANDFOX_WALLPAPER_2
 
         /**
          * Defines the standard path at which a wallpaper resource is kept on disk.

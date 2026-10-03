@@ -29,6 +29,7 @@ import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BaseBrowserFragment
 import org.mozilla.fenix.debug.IceravenDebugTrace
+import org.mozilla.fenix.debug.SandfoxStartupTrace
 import org.mozilla.fenix.browser.ContextMenuSnackbarDelegate
 import org.mozilla.fenix.browser.CustomTabColorsBinding
 import org.mozilla.fenix.browser.CustomTabContextMenuCandidate
@@ -52,7 +53,9 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
     @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
+        SandfoxStartupTrace.mark("PWA_FRAGMENT_INITIALIZE_START")
         super.initializeUI(view, tab)
+        SandfoxStartupTrace.mark("PWA_FRAGMENT_BASE_UI_READY")
 
         val customTabSessionId = customTabSessionId ?: return
         val activity = requireActivity()
@@ -124,6 +127,8 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 view = view,
             )
         }
+
+        SandfoxStartupTrace.mark("PWA_FRAGMENT_MANIFEST_READY", "present" to (manifest != null))
 
         if (manifest != null) {
             activity.lifecycle.addObservers(

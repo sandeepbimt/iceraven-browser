@@ -18,6 +18,7 @@ import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.service.sync.autofill.GeckoCreditCardsAddressesStorageDelegate
 import mozilla.components.service.sync.logins.GeckoLoginStorageDelegate
 import org.mozilla.fenix.Config
+import org.mozilla.fenix.debug.SandfoxStartupTrace
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.nimbus.FxNimbus
@@ -56,7 +57,9 @@ object GeckoProvider {
             runtimeSettings.fontSizeFactor = fontSize
         }
 
+        SandfoxStartupTrace.mark("GECKO_RUNTIME_CREATE_START")
         val geckoRuntime = GeckoRuntime.create(context, runtimeSettings)
+        SandfoxStartupTrace.mark("GECKO_RUNTIME_CREATE_END")
 
         geckoRuntime.autocompleteStorageDelegate =
             GeckoAutocompleteStorageDelegate(

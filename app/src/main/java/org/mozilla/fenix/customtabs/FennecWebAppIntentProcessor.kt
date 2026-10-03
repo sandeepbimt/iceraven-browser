@@ -32,6 +32,7 @@ import mozilla.components.support.utils.toSafeIntent
 import org.json.JSONException
 import org.json.JSONObject
 import org.mozilla.fenix.R
+import org.mozilla.fenix.debug.SandfoxStartupTrace
 import org.mozilla.fenix.perf.runBlockingIncrement
 
 /** Legacy processor for Progressive Web App shortcut intents created by Fennec. */
@@ -56,10 +57,12 @@ class FennecWebAppIntentProcessor(
         val url = safeIntent.dataString
 
         return if (!url.isNullOrEmpty() && matches(intent)) {
+            SandfoxStartupTrace.mark("PWA_PROCESSOR_START", "url" to url)
             // Newly-created Sandfox PWA shortcuts carry their manifest in the launcher intent.
             // This avoids a blocking manifest database/file lookup on the normal launch path.
             val webAppManifest =
                 intent.getWebAppManifest() ?: runBlockingIncrement { loadManifest(safeIntent, url) }
+            SandfoxStartupTrace.mark("PWA_MANIFEST_READY", "embedded" to (intent.getWebAppManifest() != null))
             val sessionId =
                 if (webAppManifest != null) {
                     useCases.addWebApp(
@@ -76,6 +79,7 @@ class FennecWebAppIntentProcessor(
                     )
                 }
             intent.putSessionId(sessionId)
+            SandfoxStartupTrace.mark("PWA_SESSION_CREATED", "sessionId" to sessionId)
 
             // The actual PWA activity, not IntentReceiverActivity, must be the root of the
             // dedicated document task. This also covers manifest-less standalone shortcuts.
