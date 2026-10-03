@@ -97,7 +97,15 @@ class IntentReceiverActivity : Activity() {
             }
         }
 
-        val processor = getIntentProcessors(private).firstOrNull { it.process(intent) }
+        // PWA intents only need the external-app processors. Avoid constructing unrelated intent processors
+        // (notably extension/install processors) on the PWA cold-launch critical path.
+        val processors =
+            if (intent.action == FennecWebAppIntentProcessor.ACTION_FENNEC_WEBAPP) {
+                components.intentProcessors.externalAppIntentProcessors
+            } else {
+                getIntentProcessors(private)
+            }
+        val processor = processors.firstOrNull { it.process(intent) }
         val intentProcessorType = components.intentProcessors.getType(processor)
 
         if (intentProcessorType.shouldOpenToBrowser(intent)) {

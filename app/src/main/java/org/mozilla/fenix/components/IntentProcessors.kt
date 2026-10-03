@@ -13,6 +13,7 @@ import AddonInstallIntentProcessor
 import android.content.Context
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
+import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker
 import mozilla.components.feature.customtabs.CustomTabIntentProcessor
 import mozilla.components.feature.intent.processing.TabIntentProcessor
 import mozilla.components.feature.pwa.ManifestStorage
@@ -38,16 +39,16 @@ class IntentProcessors(
     private val customTabsUseCases: CustomTabsUseCases,
     private val searchUseCases: SearchUseCases,
     private val manifestStorage: ManifestStorage,
-    private val engine: Engine,
+    private val engine: Lazy<Engine>,
 ) {
     /** Provides intent processing functionality for ACTION_VIEW and ACTION_SEND intents. */
     val intentProcessor by lazyMonitored {
-        TabIntentProcessor(tabsUseCases, searchUseCases.newTabSearch, isPrivate = false, engine = engine)
+        TabIntentProcessor(tabsUseCases, searchUseCases.newTabSearch, isPrivate = false, engine = engine.value)
     }
 
     /** Provides intent processing functionality for ACTION_VIEW and ACTION_SEND intents in private tabs. */
     val privateIntentProcessor by lazyMonitored {
-        TabIntentProcessor(tabsUseCases, searchUseCases.newPrivateTabSearch, isPrivate = true, engine = engine)
+        TabIntentProcessor(tabsUseCases, searchUseCases.newPrivateTabSearch, isPrivate = true, engine = engine.value)
     }
 
     val customTabIntentProcessor by lazyMonitored {
@@ -74,13 +75,13 @@ class IntentProcessors(
     }
 
     val webNotificationsIntentProcessor by lazyMonitored {
-        WebNotificationIntentProcessor(engine)
+        WebNotificationIntentProcessor(engine.value)
     }
 
     val passwordManagerIntentProcessor by lazyMonitored {
         PasswordManagerIntentProcessor()
     }
     val addonInstallIntentProcessor by lazyMonitored {
-        AddonInstallIntentProcessor(context, engine)
+        AddonInstallIntentProcessor(context, engine.value)
     }
 }

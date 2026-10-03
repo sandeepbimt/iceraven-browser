@@ -170,7 +170,7 @@ class Components(
             useCases.customTabsUseCases,
             useCases.searchUseCases,
             core.webAppManifestStorage,
-            core.engine,
+            lazyMonitored { core.engine },
         )
     }
 
