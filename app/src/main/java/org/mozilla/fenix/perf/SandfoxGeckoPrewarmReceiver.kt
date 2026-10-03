@@ -41,7 +41,7 @@ class SandfoxGeckoPrewarmReceiver : BroadcastReceiver() {
         runtime.webExtensionController.enableExtensionProcessSpawning()
 
         runtime.webExtensionController.list().accept { extensions ->
-            val uBlock = extensions.firstOrNull {
+            val uBlock = extensions.orEmpty().firstOrNull {
                 it.id == UBLOCK_ORIGIN_ID ||
                     it.metaData.name.equals(UBLOCK_NAME, ignoreCase = true)
             } ?: return@accept
