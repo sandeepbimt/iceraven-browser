@@ -1,7 +1,9 @@
 name: Release
 
 on:
-  create:
+  push:
+    tags:
+      - 'sandfox-*'
 
 jobs:
   release-automation:
@@ -81,7 +83,7 @@ jobs:
           echo "[${PREVIOUS_RELEASE_TAG}...${CURRENT_RELEASE_TAG}](https://github.com/${{ github.repository }}/compare/${PREVIOUS_RELEASE_TAG}...${CURRENT_RELEASE_TAG})" >> temp_changelog.md
 
       - name: Rename APKs for Release
-        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
+        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'sandfox')"
         run: |
           mkdir -p dist_apks
           cp gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk dist_apks/${{ github.event.ref }}-arm64-v8a.apk

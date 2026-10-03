@@ -9,6 +9,7 @@ on:
       - sandfox/pwa-prewarm
       - sandfox/dark-engine-v1
       - sandfox/dark-engine-v2
+      - sandfox/branding-v1
 
 jobs:
   release-automation:
@@ -43,7 +44,7 @@ jobs:
 
       - name: Relpace strings
         run: |
-          sed -i 's/Firefox/Iceraven/g' app/src/*/res/values*/*strings.xml
+          sed -i 's/Firefox/Sandfox/g' app/src/*/res/values*/*strings.xml
           sed -i '/about_content/s/Mozilla/@forkmaintainers/' app/src/*/res/values*/*strings.xml
           sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
 
@@ -98,5 +99,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
-          name: iceraven-standalone-arm64-v8a
+          name: sandfox-standalone-arm64-v8a
 
