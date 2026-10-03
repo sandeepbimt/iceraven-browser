@@ -41,24 +41,42 @@ jobs:
           ./automation/iceraven/patch_android_components.sh
           ./automation/iceraven/setup_venv.sh
 
-      - name: Apply Sandfox branding
+      - name: Apply frozen SANDFOX branding
         run: |
-          # Brand only the packaged app; browser functionality and package IDs remain unchanged.
-          sed -i 's/Firefox/Sandfox/g; s/Iceraven/Sandfox/g' app/src/*/res/values*/*strings.xml
-          sed -i '/about_content/s/Mozilla/Sandfox/' app/src/*/res/values*/*strings.xml
+          # Branding-only layer. Package IDs, Gecko, PWA, dark-engine and extension logic stay unchanged.
+          sed -i 's/Firefox/SANDFOX/g; s/Iceraven/SANDFOX/g' app/src/*/res/values*/*strings.xml
+          sed -i '/about_content/s/Mozilla/SANDFOX/' app/src/*/res/values*/*strings.xml
           sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
           mkdir -p app/src/main/res/drawable
-          cat > app/src/main/res/drawable/sandfox_launcher.xml <<'EOF'
-          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-              <path android:fillColor="#12161C" android:pathData="M0,0h108v108h-108z"/>
-              <path android:fillColor="#FF9F43" android:pathData="M18,31 L31,16 L40,29 C45,26 50,25 54,25 C58,25 63,26 68,29 L77,16 L90,31 L87,67 C82,82 69,91 54,94 C39,91 26,82 21,67 Z"/>
-              <path android:fillColor="#12161C" android:pathData="M27,43 C34,34 44,33 54,39 C64,33 74,34 81,43 L78,65 C72,76 63,82 54,84 C45,82 36,76 30,65 Z"/>
-              <path android:fillColor="#FFFFFF" android:pathData="M36,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12zM60,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12z"/>
-              <path android:fillColor="#FF9F43" android:pathData="M48,65h12l-6,8z"/>
-          </vector>
-          EOF
-          sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@drawable/sandfox_launcher"#' app/src/main/AndroidManifest.xml
-          sed -i 's#android:roundIcon="@mipmap/ic_launcher_round"#android:roundIcon="@drawable/sandfox_launcher"#' app/src/main/AndroidManifest.xml
+          cat > app/src/main/res/drawable/sandfox_icon.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+<path android:fillColor="#12161C" android:pathData="M0,0h108v108h-108z"/>
+<path android:fillColor="#FF9F43" android:pathData="M18,31 L31,16 L40,29 C45,26 50,25 54,25 C58,25 63,26 68,29 L77,16 L90,31 L87,67 C82,82 69,91 54,94 C39,91 26,82 21,67 Z"/>
+<path android:fillColor="#12161C" android:pathData="M27,43 C34,34 44,33 54,39 C64,33 74,34 81,43 L78,65 C72,76 63,82 54,84 C45,82 36,76 30,65 Z"/>
+<path android:fillColor="#FFFFFF" android:pathData="M36,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12zM60,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12z"/>
+<path android:fillColor="#FF9F43" android:pathData="M48,65h12l-6,8z"/>
+</vector>
+EOF
+          cat > app/src/main/res/drawable/sandfox_wordmark_text.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="800" android:viewportHeight="108">
+<path android:fillColor="#FFFFFF" android:pathData="M364.08,30.16V42.8Q359.16,40.6 354.48,39.48Q349.8,38.36 345.64,38.36Q340.12,38.36 337.48,39.88Q334.84,41.4 334.84,44.6Q334.84,47 336.62,48.34Q338.4,49.68 343.08,50.64L349.64,51.96Q359.6,53.96 363.8,58.04Q368,62.12 368,69.64Q368,79.52 362.14,84.34Q356.28,89.16 344.24,89.16Q338.56,89.16 332.84,88.08Q327.12,87 321.4,84.88V71.88Q327.12,74.92 332.46,76.46Q337.8,78 342.76,78Q347.8,78 350.48,76.32Q353.16,74.64 353.16,71.52Q353.16,68.72 351.34,67.2Q349.52,65.68 344.08,64.48L338.12,63.16Q329.16,61.24 325.02,57.04Q320.88,52.84 320.88,45.72Q320.88,36.8 326.64,32Q332.4,27.2 343.2,27.2Q348.12,27.2 353.32,27.94Q358.52,28.68 364.08,30.16Z M417.76,77.12H393.68L389.88,88H374.4L396.52,28.28H414.88L437,88H421.52ZM397.52,66.04H413.88L405.72,42.28Z M444.92,28.28H462.12L483.84,69.24V28.28H498.44V88H481.24L459.52,47.04V88H444.92Z M528.88,39.92V76.36H534.4Q543.84,76.36 548.82,71.68Q553.8,67 553.8,58.08Q553.8,49.2 548.84,44.56Q543.88,39.92 534.4,39.92ZM513.48,28.28H529.72Q543.32,28.28 549.98,30.22Q556.64,32.16 561.4,36.8Q565.6,40.84 567.64,46.12Q569.68,51.4 569.68,58.08Q569.68,64.84 567.64,70.14Q565.6,75.44 561.4,79.48Q556.6,84.12 549.88,86.06Q543.16,88 529.72,88H513.48Z M581.48,28.28H623.04V39.92H596.88V51.04H621.48V62.68H596.88V88H581.48Z M664.72,38.36Q657.68,38.36 653.8,43.56Q649.92,48.76 649.92,58.2Q649.92,67.6 653.8,72.8Q657.68,78 664.72,78Q671.8,78 675.68,72.8Q679.56,67.6 679.56,58.2Q679.56,48.76 675.68,43.56Q671.8,38.36 664.72,38.36ZM664.72,27.2Q679.12,27.2 687.28,35.44Q695.44,43.68 695.44,58.2Q695.44,72.68 687.28,80.92Q679.12,89.16 664.72,89.16Q650.36,89.16 642.18,80.92Q634,72.68 634,58.2Q634,43.68 642.18,35.44Q650.36,27.2 664.72,27.2Z M740.36,57.52 761.08,88H745.04L731.08,67.6L717.24,88H701.12L721.84,57.52L701.92,28.28H718L731.08,47.52L744.12,28.28H760.28Z"/>
+</vector>
+EOF
+          cat > app/src/main/res/drawable/sandfox_wordmark.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="800" android:viewportHeight="108">
+<path android:fillColor="#12161C" android:pathData="M0,0h108v108h-108z"/>
+<path android:fillColor="#FF9F43" android:pathData="M18,31 L31,16 L40,29 C45,26 50,25 54,25 C58,25 63,26 68,29 L77,16 L90,31 L87,67 C82,82 69,91 54,94 C39,91 26,82 21,67 Z"/>
+<path android:fillColor="#12161C" android:pathData="M27,43 C34,34 44,33 54,39 C64,33 74,34 81,43 L78,65 C72,76 63,82 54,84 C45,82 36,76 30,65 Z"/>
+<path android:fillColor="#FFFFFF" android:pathData="M36,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12zM60,48h12c0,8 -2,12 -6,12s-6,-4 -6,-12z"/>
+<path android:fillColor="#FF9F43" android:pathData="M48,65h12l-6,8z"/>
+<path android:fillColor="#FFFFFF" android:pathData="M364.08,30.16V42.8Q359.16,40.6 354.48,39.48Q349.8,38.36 345.64,38.36Q340.12,38.36 337.48,39.88Q334.84,41.4 334.84,44.6Q334.84,47 336.62,48.34Q338.4,49.68 343.08,50.64L349.64,51.96Q359.6,53.96 363.8,58.04Q368,62.12 368,69.64Q368,79.52 362.14,84.34Q356.28,89.16 344.24,89.16Q338.56,89.16 332.84,88.08Q327.12,87 321.4,84.88V71.88Q327.12,74.92 332.46,76.46Q337.8,78 342.76,78Q347.8,78 350.48,76.32Q353.16,74.64 353.16,71.52Q353.16,68.72 351.34,67.2Q349.52,65.68 344.08,64.48L338.12,63.16Q329.16,61.24 325.02,57.04Q320.88,52.84 320.88,45.72Q320.88,36.8 326.64,32Q332.4,27.2 343.2,27.2Q348.12,27.2 353.32,27.94Q358.52,28.68 364.08,30.16Z M417.76,77.12H393.68L389.88,88H374.4L396.52,28.28H414.88L437,88H421.52ZM397.52,66.04H413.88L405.72,42.28Z M444.92,28.28H462.12L483.84,69.24V28.28H498.44V88H481.24L459.52,47.04V88H444.92Z M528.88,39.92V76.36H534.4Q543.84,76.36 548.82,71.68Q553.8,67 553.8,58.08Q553.8,49.2 548.84,44.56Q543.88,39.92 534.4,39.92ZM513.48,28.28H529.72Q543.32,28.28 549.98,30.22Q556.64,32.16 561.4,36.8Q565.6,40.84 567.64,46.12Q569.68,51.4 569.68,58.08Q569.68,64.84 567.64,70.14Q565.6,75.44 561.4,79.48Q556.6,84.12 549.88,86.06Q543.16,88 529.72,88H513.48Z M581.48,28.28H623.04V39.92H596.88V51.04H621.48V62.68H596.88V88H581.48Z M664.72,38.36Q657.68,38.36 653.8,43.56Q649.92,48.76 649.92,58.2Q649.92,67.6 653.8,72.8Q657.68,78 664.72,78Q671.8,78 675.68,72.8Q679.56,67.6 679.56,58.2Q679.56,48.76 675.68,43.56Q671.8,38.36 664.72,38.36ZM664.72,27.2Q679.12,27.2 687.28,35.44Q695.44,43.68 695.44,58.2Q695.44,72.68 687.28,80.92Q679.12,89.16 664.72,89.16Q650.36,89.16 642.18,80.92Q634,72.68 634,58.2Q634,43.68 642.18,35.44Q650.36,27.2 664.72,27.2Z M740.36,57.52 761.08,88H745.04L731.08,67.6L717.24,88H701.12L721.84,57.52L701.92,28.28H718L731.08,47.52L744.12,28.28H760.28Z"/>
+</vector>
+EOF
+          sed -i 's#@drawable/ic_logo_wordmark_normal#@drawable/sandfox_wordmark#g; s#@drawable/ic_logo_wordmark_private#@drawable/sandfox_wordmark#g; s#@drawable/ic_wordmark_text_normal#@drawable/sandfox_wordmark_text#g; s#@drawable/ic_wordmark_text_private#@drawable/sandfox_wordmark_text#g; s#@drawable/ic_wordmark_logo#@drawable/sandfox_icon#g' app/src/main/res/values/styles.xml
+          sed -i 's#android:icon="@drawable/sandfox_launcher"#android:icon="@drawable/sandfox_icon"#; s#android:roundIcon="@drawable/sandfox_launcher"#android:roundIcon="@drawable/sandfox_icon"#' app/src/main/AndroidManifest.xml
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
