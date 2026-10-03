@@ -32,13 +32,11 @@
       const target = `calc(l*(1-${over})+min(${cfg.peak},max(${floor},calc(${cfg.peak}-(l-${cfg.threshold})*.18)))*${over})`;
       return `oklch(from ${token} ${target} c h / alpha)`;
     }
-    const target = `clamp(${cfg.fgFloor},calc(${sfg.fgFloor}+l*.22),${cfg.fgCeiling})`;
+    const target = `clamp(${cfg.fgFloor},calc(${cfg.fgFloor}+l*.22),${cfg.fgCeiling})`;
     return `oklch(from ${token} ${target} c h / alpha)`;
   }
 
-  function value(text, kind) {
-    return text.replace(COLORS, token => color(token, kind));
-  }
+  function value(text, kind) { return text.replace(COLORS, token => color(token, kind)); }
 
   function propertyKind(p) {
     p = p.toLowerCase();
@@ -88,9 +86,9 @@
     } catch (_) {}
   }
 
-  function inlineStyle(s)  {
+  function inlineStyle(s) {
     if (doneStyles.has(s)) return;
-    doneStyles.add(s), doneStyles;
+    doneStyles.add(s);
     const clone = cloneSheet(s.textContent || "", "inline");
     if (clone) s.after(clone);
   }
@@ -107,7 +105,9 @@
     try {
       await Promise.all([...document.querySelectorAll("link[rel~='stylesheet'][href]")].map(link));
       document.querySelectorAll(`style:not([${MARK}])`).forEach(inlineStyle);
-      document.querySelectorAll("body,main,article,header,nav,section,aside,footer,form,dialog,pre,code,button,input,textarea,select").forEach(el => { if (el.getClientRects().length) inlineNode(el); });
+      document.querySelectorAll("body,main,article,header,nav,section,aside,footer,form,dialog,pre,code,button,input,textarea,select").forEach(el => {
+        if (el.getClientRects().length) inlineNode(el);
+      });
     } finally { busy = false; }
   }
 
@@ -118,7 +118,7 @@
   }
 
   async function init() {
-    try { const x = await browser.storage.local.get(KEY); cfg = { ...DEFAULTS, ...x?.[KEY] || {} }; } catch (_) {}
+    try { const x = await browser.storage.local.get(KEY); cfg = { ...DEFAULTS, ...(x?.[KEY] || {}) }; } catch (_) {}
     if (!cfg.enabled || hostExcluded()) { excluded = true; return; }
     guard();
     queue();
@@ -127,7 +127,7 @@
       for (const m of ms) {
         if (m.type === "attributes") { doneNodes.delete(m.target); relevant = true; }
         if (m.type === "childList") for (const n of m.addedNodes) {
-           if (n.nodeType === Node.EREMENT_NODE && (n.matches?.("style,link[rel~='stylesheet']") || nquerySelector?.("style,link[rel~='stylesheet']"))) relevant = true;
+          if (n.nodeType === Node.ELEMENT_NODE && (n.matches?.("style,link[rel~='stylesheet']") || n.querySelector?.("style,link[rel~='stylesheet']"))) relevant = true;
         }
       }
       if (relevant) queue();
