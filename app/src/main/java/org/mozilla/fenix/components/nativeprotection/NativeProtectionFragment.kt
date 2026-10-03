@@ -32,24 +32,31 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             }
         })
 
-        val selectedTab = requireComponents.core.store.state.selectedTab
-        val session = selectedTab?.engineState?.engineSession
+        val selectedTabId = requireComponents.core.store.state.selectedTabId
+        val selectedTab = selectedTabId?.let { id ->
+            requireComponents.core.store.state.tabs.firstOrNull { it.id == id }
+                ?: requireComponents.core.store.state.customTabs.firstOrNull { it.id == id }
+        }
         val host = selectedTab?.content?.url?.let { Uri.parse(it).host }
+        val trackingProtectionUseCases = requireComponents.useCases.trackingProtectionUseCases
 
         screen.addPreference(SwitchPreferenceCompat(requireContext()).apply {
             title = getString(R.string.native_protection_this_site)
             summary = host ?: getString(R.string.native_protection_no_site)
-            isEnabled = session != null && host != null
+            isEnabled = selectedTabId != null && host != null
             isChecked = true
-            if (session != null) {
-                engine.siteExceptionStore().contains(session) { excluded ->
+            selectedTabId?.let { tabId ->
+                trackingProtectionUseCases.containsException(tabId) { excluded ->
                     activity?.runOnUiThread { isChecked = !excluded }
                 }
             }
             setOnPreferenceChangeListener { _, value ->
-                if (session != null) {
-                    if (value as Boolean) engine.siteExceptionStore().remove(session)
-                    else engine.siteExceptionStore().add(session)
+                selectedTabId?.let { tabId ->
+                    if (value as Boolean) {
+                        trackingProtectionUseCases.removeException(tabId)
+                    } else {
+                        trackingProtectionUseCases.addException(tabId)
+                    }
                 }
                 true
             }
