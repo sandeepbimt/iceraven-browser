@@ -257,5 +257,8 @@ sealed class MenuAction : Action {
 
         /** [Navigate] action dispatched when navigating to the IP Protection settings screen. */
         data object IPProtectionSettings : Navigate()
+
+        /** [Navigate] action dispatched when opening Sandfox native protection settings. */
+        data object NativeProtection : Navigate()
     }
 }
