@@ -286,6 +286,12 @@ class MenuNavigationMiddleware(
                         ),
                     )
 
+                is MenuAction.Navigate.NativeProtection ->
+                    navController.nav(
+                        R.id.menuDialogFragment,
+                        MenuDialogFragmentDirections.actionGlobalNativeProtectionFragment(),
+                    )
+
                 is MenuAction.Navigate.WebCompatReporter -> {
                     val session = currentState.browserMenuState?.selectedTab
                     session?.content?.url?.let { tabUrl ->
