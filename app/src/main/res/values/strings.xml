@@ -4229,4 +4229,22 @@
     <string name="standalone_web_app_choose_icon">Choose image</string>
     <string name="standalone_web_app_use_default_icon">Use default</string>
     <string name="standalone_web_app_cancel">Cancel</string>
+    <string name="native_protection_menu">Ad &amp; Tracker Protection</string>
+    <string name="native_protection_title">Ad &amp; Tracker Protection</string>
+    <string name="native_protection_enabled">Native protection</string>
+    <string name="native_protection_enabled_summary">Gecko native adblock-rust protection is active.</string>
+    <string name="native_protection_disabled_summary">Native ad and tracker filtering is disabled.</string>
+    <string name="native_protection_this_site">Protection on this site</string>
+    <string name="native_protection_no_site">No web site is selected.</string>
+    <string name="native_protection_filter_lists">Filter lists</string>
+    <string name="native_protection_lists_selected">%1$d lists selected</string>
+    <string name="native_protection_update_filters">Update selected filters</string>
+    <string name="native_protection_update_summary">Refresh selected lists in Gecko native classifier.</string>
+    <string name="native_protection_updating">Refreshing filters…</string>
+    <string name="native_protection_update_started">Refresh requested in the background.</string>
+    <string name="native_protection_custom_filters">My filters</string>
+    <string name="native_protection_custom_filters_message">Enter one uBlock-compatible network filter per line. These rules are stored locally and loaded by the Gecko native classifier.</string>
+    <string name="native_protection_custom_filters_summary">Local custom rules are active when native protection is enabled.</string>
+    <string name="native_protection_engine">Native engine</string>
+    <string name="native_protection_engine_summary">Gecko ContentClassifierService + adblock-rust. No WebExtension is installed.</string>
 </resources>
