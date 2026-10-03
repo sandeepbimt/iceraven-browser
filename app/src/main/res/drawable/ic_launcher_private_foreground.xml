@@ -1,22 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:pathData="M20,24 L39,31 L54,19 L69,31 L88,24 L82,53 L54,84 L26,53 Z"
-        android:fillColor="#FFFFFF"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineJoin="miter"/>
-    <path
-        android:pathData="M35,48 L54,38 L73,48 L54,70 Z"
-        android:fillColor="#111214"
-        android:strokeColor="#111214"
-        android:strokeLineJoin="miter"/>
-    <path
-        android:pathData="M42,49 L50,46 L58,50 L66,46 L66,53 L58,57 L54,55 L50,57 L42,53 Z"
-        android:fillColor="#FFFFFF"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineJoin="miter"/>
-</vector>
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_sandfox_icon"
+    android:gravity="fill" />
