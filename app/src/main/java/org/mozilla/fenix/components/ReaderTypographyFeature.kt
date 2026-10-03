@@ -7,6 +7,7 @@ package org.mozilla.fenix.components
 import android.net.Uri
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 
 /**
@@ -21,7 +22,7 @@ class ReaderTypographyFeature(
     private val store: BrowserStore,
 ) : LifecycleAwareFeature {
     private val observedSessions = mutableMapOf<String, ObservedSession>()
-    private var subscription: BrowserStore.Subscription<*, *>? = null
+    private var subscription: Store.Subscription<*, *>? = null
 
     override fun start() {
         if (subscription != null) return
@@ -60,7 +61,7 @@ class ReaderTypographyFeature(
                     private var loading = false
                     private var currentUrl: String? = null
 
-                    override fun onLocationChange(url: String) {
+                    override fun onLocationChange(url: String, hasUserGesture: Boolean) {
                         currentUrl = url
                     }
 

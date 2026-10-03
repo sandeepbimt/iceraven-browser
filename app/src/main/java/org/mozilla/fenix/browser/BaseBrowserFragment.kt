@@ -190,6 +190,7 @@ import org.mozilla.fenix.components.FenixAutocompletePrompt
 import org.mozilla.fenix.components.FenixEmailMaskPrompt
 import org.mozilla.fenix.components.FenixSuggestStrongPasswordPrompt
 import org.mozilla.fenix.components.FindInPageIntegration
+import org.mozilla.fenix.components.ReaderTypographyFeature
 import org.mozilla.fenix.components.accounts.FxaWebChannelIntegration
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MicrosurveyAction
