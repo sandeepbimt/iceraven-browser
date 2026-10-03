@@ -324,8 +324,8 @@ www.thehindu.com##.thgsignin.btn-signup.btn > span
 www.thehindu.com##.thgsignin.btn-signup.btn
 ! 21 Sept 2026 https://www.bbc.com
 www.bbc.com##.vzgip.AccountButtons-styles__AccountMobileToggleButtonStyled-sc-32916240-0
-www.bbc.com##.piOtT.bVJMmx.cHhxqu.Button-styles__UnboxedShareButton-sc-c0f7f974-6.Button-styles__UnboxedButton-sc-c0f7f974-2 > .bLCQBA.Button-styles__ButtonText-sc-32916240-1
-www.bbc.com##.piOtT.bVJMmx.cHhxqu.Button-styles__UnboxedShareButton-sc-c0f7f974-6.Button-styles__UnboxedButton-styles__UnboxedButton-sc-c0f7f974-5
+www.bbc.com##.piOtT.bVJMmx.cHhxqu.Button-styles__UnboxedShareButton-sc-c0f7f974-6.Button-styles__UnboxedButton-sc-c0f7f974-5.Button-styles__ButtonBase-sc-c0f7f974-2 > .bLCQBA.Button-styles__ButtonText-sc-c0f7f974-1
+www.bbc.com##.piOtT.bVJMmx.cHhxqu.Button-styles__UnboxedShareButton-sc-c0f7f974-6.Button-styles__UnboxedButton-sc-c0f7f974-5.Button-styles__ButtonBase-sc-c0f7f974-2 > .bljxtJ.Button-styles__ButtonIcon-sc-c0f7f974-0 > .iosMJz.Icon-styles__IconStyled-sc-4d91d42a-0
 www.bbc.com##.hYvtJu.Byline-styles__ActionsContainerStyled-sc-66f6383-3
 www.aljazeera.com##.container--ads-leaderboard-atf--sticky.container--ads-leaderboard-atf--delayed-scroll.container--ads-leaderboard-atf.container--ads > .ads > .ads__slot > div
 ! 21 Sept 2026 https://www.reddit.com
