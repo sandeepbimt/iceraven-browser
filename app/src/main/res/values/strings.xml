@@ -4229,4 +4229,26 @@
     <string name="standalone_web_app_choose_icon">Choose image</string>
     <string name="standalone_web_app_use_default_icon">Use default</string>
     <string name="standalone_web_app_cancel">Cancel</string>
+
+    <string name="native_protection_menu">Ad &amp; Tracker Protection</string>
+    <string name="native_protection_title">Ad &amp; Tracker Protection</string>
+    <string name="native_protection_enabled">Protection</string>
+    <string name="native_protection_enabled_summary">Sandfox native protection is active.</string>
+    <string name="native_protection_disabled_summary">Sandfox native protection is disabled.</string>
+    <string name="native_protection_this_site">Protection on this site</string>
+    <string name="native_protection_no_site">No web site is selected.</string>
+    <string name="native_protection_filter_lists">Filter lists</string>
+    <string name="native_protection_lists_selected">%1$d lists selected</string>
+    <string name="native_protection_update_filters">Update selected filters</string>
+    <string name="native_protection_update_summary">Download selected lists and rebuild the native database off the UI thread.</string>
+    <string name="native_protection_updating">Updating filters…</string>
+    <string name="native_protection_update_result">Updated %1$d, failed %2$d, compiled %3$d rules.</string>
+    <string name="native_protection_cosmetic">Cosmetic filtering</string>
+    <string name="native_protection_cosmetic_summary">Apply supported uBlock-style CSS selectors from selected lists and My filters.</string>
+    <string name="native_protection_custom_filters">My filters</string>
+    <string name="native_protection_custom_filters_message">Enter one uBlock-compatible filter per line. Supported native rules include hostname/network rules and CSS cosmetic selectors. Unsupported advanced scriptlets are ignored.</string>
+    <string name="native_protection_stats">Blocking statistics</string>
+    <string name="native_protection_stats_summary">%1$d native navigation/subframe requests blocked since install.</string>
+    <string name="native_protection_info">Native engine</string>
+    <string name="native_protection_info_summary">V1 network/subframe matching + V2 cosmetic filtering. No WebExtension process is used.</string>
 </resources>

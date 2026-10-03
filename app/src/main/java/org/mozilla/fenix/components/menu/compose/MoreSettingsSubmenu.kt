@@ -42,6 +42,7 @@ internal fun MoreSettingsSubmenu(
     summarizationMenuState: SummarizationMenuState,
     isPrivate: Boolean,
     onWebCompatReporterClick: () -> Unit,
+    onNativeProtectionClick: () -> Unit = {},
     onSummarizePageMenuExposed: () -> Unit,
     onSummarizePageClick: () -> Unit,
     onShortcutsMenuClick: () -> Unit,
@@ -70,6 +71,7 @@ internal fun MoreSettingsSubmenu(
             isWebCompatEnabled = isWebCompatEnabled,
             onWebCompatReporterClick = onWebCompatReporterClick,
         )
+        NativeProtectionMenuItem(onClick = onNativeProtectionClick)
         ShortcutsSection(
             showShortcuts = showShortcuts,
             isPinned = isPinned,
@@ -96,6 +98,15 @@ internal fun MoreSettingsSubmenu(
             onPrintMenuClick = onPrintMenuClick,
         )
     }
+}
+
+@Composable
+private fun NativeProtectionMenuItem(onClick: () -> Unit) {
+    MenuItem(
+        label = stringResource(id = R.string.native_protection_menu),
+        beforeIconPainter = painterResource(id = R.drawable.ic_kit_shield_on_state),
+        onClick = onClick,
+    )
 }
 
 @Composable

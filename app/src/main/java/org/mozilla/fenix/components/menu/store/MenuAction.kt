@@ -257,5 +257,7 @@ sealed class MenuAction : Action {
 
         /** [Navigate] action dispatched when navigating to the IP Protection settings screen. */
         data object IPProtectionSettings : Navigate()
+
+        data object NativeProtection : Navigate()
     }
 }

@@ -423,6 +423,12 @@ class MenuNavigationMiddleware(
                     }
                 }
 
+                is MenuAction.Navigate.NativeProtection ->
+                    navController.nav(
+                        R.id.menuDialogFragment,
+                        MenuDialogFragmentDirections.actionGlobalNativeProtectionFragment(),
+                    )
+
                 is MenuAction.Navigate.IPProtectionSettings -> {
                     navController.nav(
                         id = R.id.menuDialogFragment,

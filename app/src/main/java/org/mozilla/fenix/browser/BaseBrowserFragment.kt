@@ -190,6 +190,7 @@ import org.mozilla.fenix.components.FenixAutocompletePrompt
 import org.mozilla.fenix.components.FenixEmailMaskPrompt
 import org.mozilla.fenix.components.FenixSuggestStrongPasswordPrompt
 import org.mozilla.fenix.components.FindInPageIntegration
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionFeature
 import org.mozilla.fenix.components.ReaderTypographyFeature
 import org.mozilla.fenix.components.accounts.FxaWebChannelIntegration
 import org.mozilla.fenix.components.appstate.AppAction
@@ -292,6 +293,7 @@ abstract class BaseBrowserFragment :
 
     protected val readerViewFeature = ViewBoundFeatureWrapper<ReaderViewFeature>()
     protected val readerTypographyFeature = ViewBoundFeatureWrapper<ReaderTypographyFeature>()
+    protected val nativeProtectionFeature = ViewBoundFeatureWrapper<NativeProtectionFeature>()
     protected val thumbnailsFeature = ViewBoundFeatureWrapper<BrowserThumbnails>()
 
     @VisibleForTesting internal val messagingFeatureMicrosurvey = ViewBoundFeatureWrapper<MessagingFeature>()

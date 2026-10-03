@@ -52,6 +52,7 @@ import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.LensFeature
 import org.mozilla.fenix.components.QrScanFenixFeature
 import org.mozilla.fenix.components.ReaderTypographyFeature
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionFeature
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.VoiceSearchFeature
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
@@ -292,6 +293,12 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
 
         readerTypographyFeature.set(
             feature = ReaderTypographyFeature(context.components.core.store),
+            owner = this,
+            view = view,
+        )
+
+        nativeProtectionFeature.set(
+            feature = NativeProtectionFeature(context.components.core.store, context),
             owner = this,
             view = view,
         )

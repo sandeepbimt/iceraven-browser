@@ -20,6 +20,7 @@ import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.feature.search.ext.buildSearchUrl
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.GleanMetrics.ErrorPage
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionEngine
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isOnline
 
@@ -29,6 +30,7 @@ class AppRequestInterceptor(
 ) : RequestInterceptor {
 
     private var navController: WeakReference<NavController>? = null
+    private val nativeProtection by lazy { NativeProtectionEngine.get(context) }
 
     fun setNavigationController(navController: NavController) {
         this.navController = WeakReference(navController)
@@ -49,6 +51,8 @@ class AppRequestInterceptor(
         interceptErrorPageAction(uri)?.let {
             return it
         }
+
+        nativeProtection.intercept(engineSession, uri, isSubframeRequest)?.let { return it }
 
         if (interceptAboutHomeRequest(uri)) {
             // Let the original request proceed.
