@@ -107,6 +107,7 @@ import org.mozilla.fenix.GleanMetrics.TermsOfUse
 import org.mozilla.fenix.GleanMetrics.UserAiSummarize
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.Core
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionEngine
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.initializeGlean
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
@@ -339,6 +340,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Here we access the engine property, which will cause the lazy property getter to
         // construct the instance.
         components.core.engine
+
+        // Configure Gecko's native adblock-rust classifier without installing a WebExtension.
+        applicationScope.launch(IO) {
+            NativeProtectionEngine.get(applicationContext).initialize()
+        }
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then
