@@ -5,7 +5,7 @@
   "description": "Native Sandfox smart dark-page rendering engine.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "sandfox-dark-engine@sanbox.local",
+      "id": "sandfox-dark-engine@sandfox.local",
       "strict_min_version": "128.0"
     }
   },
