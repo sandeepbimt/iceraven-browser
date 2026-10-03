@@ -4243,7 +4243,7 @@
     <string name="native_protection_updating">Refreshing filters…</string>
     <string name="native_protection_update_started">Refresh requested in the background.</string>
     <string name="native_protection_custom_filters">My filters</string>
-    <string name="native_protection_custom_filters_message">Enter one uBlock-compatible network filter per line. These rules are stored locally and loaded by Gecko's native classifier.</string>
+    <string name="native_protection_custom_filters_message">Enter one uBlock-compatible network filter per line. These rules are stored locally and loaded by the Gecko native classifier.</string>
     <string name="native_protection_custom_filters_summary">Local custom rules are active when native protection is enabled.</string>
     <string name="native_protection_engine">Native engine</string>
     <string name="native_protection_engine_summary">Gecko ContentClassifierService + adblock-rust. No WebExtension is installed.</string>
