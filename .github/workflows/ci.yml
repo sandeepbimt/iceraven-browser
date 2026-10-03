@@ -8,6 +8,7 @@ on:
       - sandfox/pwa-launch-performance
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
+      - sandfox/native-protection-v1-clean
 
 jobs:
   release-automation:
