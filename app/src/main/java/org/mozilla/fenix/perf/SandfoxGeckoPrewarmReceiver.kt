@@ -46,7 +46,7 @@ class SandfoxGeckoPrewarmReceiver : BroadcastReceiver() {
                     it.metaData.name.equals(UBLOCK_NAME, ignoreCase = true)
             } ?: return@accept
 
-            if ((uBlock.flags and 1L) == 0L) {
+            if (!uBlock.metaData.enabled) {
                 return@accept
             }
 
