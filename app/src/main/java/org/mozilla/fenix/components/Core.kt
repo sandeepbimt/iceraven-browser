@@ -122,6 +122,7 @@ import org.mozilla.fenix.components.search.ApplicationSearchMiddleware
 import org.mozilla.fenix.components.search.SearchMigration
 import org.mozilla.fenix.components.search.SearchWidgetMiddleware
 import org.mozilla.fenix.downloads.DownloadService
+import org.mozilla.fenix.darkmode.SandfoxDarkEngine
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.gecko.GeckoProvider
@@ -296,7 +297,7 @@ class Core(
             lazyAutofillStorage,
             lazyPasswordsStorage,
             trackingProtectionPolicyFactory.createTrackingProtectionPolicy(),
-        )
+        ).also(SandfoxDarkEngine::install)
     }
 
     val geckoSitePermissionsStorage by lazyMonitored {

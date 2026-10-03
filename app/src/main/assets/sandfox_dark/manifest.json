@@ -1,0 +1,23 @@
+{
+  "manifest_version": 2,
+  "name": "Sandfox Dark Engine",
+  "version": "1.0.0",
+  "description": "Native Sandfox smart dark-page rendering engine.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sandfox-dark-engine@sanbox.local",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": ["storage", "<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dark-engine.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
+    }
+  ]
+}
