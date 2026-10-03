@@ -290,6 +290,7 @@ abstract class BaseBrowserFragment :
         get() = _findInPageLauncher!!
 
     protected val readerViewFeature = ViewBoundFeatureWrapper<ReaderViewFeature>()
+    protected val readerTypographyFeature = ViewBoundFeatureWrapper<ReaderTypographyFeature>()
     protected val thumbnailsFeature = ViewBoundFeatureWrapper<BrowserThumbnails>()
 
     @VisibleForTesting internal val messagingFeatureMicrosurvey = ViewBoundFeatureWrapper<MessagingFeature>()

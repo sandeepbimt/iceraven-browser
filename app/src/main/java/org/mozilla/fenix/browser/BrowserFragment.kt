@@ -51,6 +51,7 @@ import org.mozilla.fenix.browser.store.BrowserScreenAction.ReaderModeStatusUpdat
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.LensFeature
 import org.mozilla.fenix.components.QrScanFenixFeature
+import org.mozilla.fenix.components.ReaderTypographyFeature
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.VoiceSearchFeature
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
@@ -285,6 +286,12 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                         },
                     )
                 },
+            owner = this,
+            view = view,
+        )
+
+        readerTypographyFeature.set(
+            feature = ReaderTypographyFeature(context.components.core.store),
             owner = this,
             view = view,
         )
