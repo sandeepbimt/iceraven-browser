@@ -8,6 +8,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Allows for storing and retrieving screenshots -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -786,6 +787,15 @@
         <receiver
             android:name=".privacyreport.PrivacyReportNotificationReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".perf.SandfoxGeckoPrewarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".session.PrivateNotificationService"
