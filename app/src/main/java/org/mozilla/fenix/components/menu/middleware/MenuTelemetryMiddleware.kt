@@ -222,7 +222,8 @@ class MenuTelemetryMiddleware(private val accessPoint: MenuAccessPoint) : Middle
             is MenuAction.InitializeSummarizationMenuState,
             is MenuAction.UpdateIPProtectionMenuState,
             is MenuAction.OnMoreMenuClicked,
-            is MenuAction.Navigate.IPProtectionSettings -> Unit
+            is MenuAction.Navigate.IPProtectionSettings,
+            is MenuAction.Navigate.NativeProtection -> Unit
         }
     }
 }
