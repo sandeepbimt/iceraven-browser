@@ -36,7 +36,7 @@ jobs:
 
       - name: Relpace strings
         run: |
-          sed -i 's/Firefox/Iceraven/g' app/src/*/res/values*/*strings.xml
+          sed -i 's/Firefox/Sandfox/g' app/src/*/res/values*/*strings.xml
           sed -i '/about_content/s/Mozilla/@forkmaintainers/' app/src/*/res/values*/*strings.xml
           sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
 
@@ -59,9 +59,9 @@ jobs:
           keyPassword: ${{ secrets.DEBUG_KEY_PASSWORD }}
 
       - name: Create changelog
-        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
+        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'sandfox')"
         run: |
-          PREVIOUS_RELEASE_TAG=$(git tag --list iceraven-* --sort=-creatordate | tail -n+2 | head -n 1)
+          PREVIOUS_RELEASE_TAG=$(git tag --list sandfox-* --sort=-creatordate | tail -n+2 | head -n 1)
           CURRENT_RELEASE_TAG=${{ github.event.ref }}
           CURRENT_RELEASE_TAG_CAPITALIZE=${CURRENT_RELEASE_TAG^}
           CURRENT_RELEASE_TAG_CAPITALIZE=$(echo $CURRENT_RELEASE_TAG_CAPITALIZE | tr '-' ' ')
@@ -71,7 +71,7 @@ jobs:
           echo -e "## Release info\n" >> temp_changelog.md
 
           echo '```' >> temp_changelog.md
-          echo "Iceraven: $(echo $CURRENT_RELEASE_TAG |  tr -d 'iceraven-')" >> temp_changelog.md
+          echo "Sandfox: $(echo $CURRENT_RELEASE_TAG |  tr -d 'sandfox-')" >> temp_changelog.md
           echo "Fenix: ${FENIX_TAG}" >> temp_changelog.md
           echo -e '```\n' >> temp_changelog.md
 
