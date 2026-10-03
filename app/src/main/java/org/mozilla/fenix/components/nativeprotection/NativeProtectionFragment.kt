@@ -71,7 +71,7 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
                 getString(R.string.native_protection_lists_selected, it.values.size)
             }
             setOnPreferenceChangeListener { _, value ->
-                engine.setSelectedListIds(value as Set<String>)
+                engine.setSelectedListIds((value as? Set<*>)?.filterIsInstance<String>()?.toSet() ?: emptySet())
                 true
             }
         })
