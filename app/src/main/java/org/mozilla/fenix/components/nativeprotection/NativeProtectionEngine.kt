@@ -61,13 +61,47 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         if (isEnabled()) applyPreferences(forceReload = true)
     }
 
-    fun refreshFilters() {
-        if (isEnabled()) applyPreferences(forceReload = true)
+    fun lastRefreshRequestedAt(): Long =
+        prefs.getLong(KEY_LAST_REFRESH_REQUESTED_AT, 0L)
+
+    fun lastRefreshSucceededAt(): Long =
+        prefs.getLong(KEY_LAST_REFRESH_SUCCEEDED_AT, 0L)
+
+    fun lastRefreshFailedAt(): Long =
+        prefs.getLong(KEY_LAST_REFRESH_FAILED_AT, 0L)
+
+    fun refreshFilters(onResult: ((Boolean) -> Unit)? = null) {
+        if (!isEnabled()) {
+            onResult?.invoke(false)
+            return
+        }
+
+        prefs.edit()
+            .putLong(KEY_LAST_REFRESH_REQUESTED_AT, System.currentTimeMillis())
+            .apply()
+
+        applyPreferences(forceReload = true) { success ->
+            val now = System.currentTimeMillis()
+            if (success) {
+                prefs.edit()
+                    .putLong(KEY_LAST_REFRESH_SUCCEEDED_AT, now)
+                    .putLong(KEY_LAST_REFRESH_FAILED_AT, 0L)
+                    .apply()
+            } else {
+                prefs.edit()
+                    .putLong(KEY_LAST_REFRESH_FAILED_AT, now)
+                    .apply()
+            }
+            onResult?.invoke(success)
+        }
     }
 
     fun siteExceptionStore() = context.components.core.engine.trackingProtectionExceptionStore
 
-    private fun applyPreferences(forceReload: Boolean = false) {
+    private fun applyPreferences(
+        forceReload: Boolean = false,
+        onComplete: ((Boolean) -> Unit)? = null,
+    ) {
         val runtime = context.components.core.engine as? BrowserPreferencesRuntime
             ?: error("Sandfox native protection requires Gecko browser preferences")
 
@@ -86,8 +120,8 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                 PREF_PROTECTION_LIST_URLS,
                 "",
                 Branch.USER,
-                onSuccess = { setListUrls(runtime, listUrls) },
-                onError = { setListUrls(runtime, listUrls) },
+                onSuccess = { setListUrls(runtime, listUrls, onComplete) },
+                onError = { setListUrls(runtime, listUrls, onComplete) },
             )
         } else {
             runtime.setBrowserPrefs(
@@ -96,13 +130,17 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                     listUrls,
                     Branch.USER,
                 ),
-                onSuccess = {},
-                onError = {},
+                onSuccess = { onComplete?.invoke(true) },
+                onError = { onComplete?.invoke(false) },
             )
         }
     }
 
-    private fun setListUrls(runtime: BrowserPreferencesRuntime, listUrls: String) {
+    private fun setListUrls(
+        runtime: BrowserPreferencesRuntime,
+        listUrls: String,
+        onComplete: ((Boolean) -> Unit)? = null,
+    ) {
         runtime.setBrowserPrefs(
             listOf(
                 SetBrowserPreference.setBoolPref(PREF_PROTECTION_ENABLED, isEnabled(), Branch.USER),
@@ -118,8 +156,8 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                 ),
                 SetBrowserPreference.setStringPref(PREF_PROTECTION_LIST_URLS, listUrls, Branch.USER),
             ),
-            onSuccess = {},
-            onError = {},
+            onSuccess = { onComplete?.invoke(true) },
+            onError = { onComplete?.invoke(false) },
         )
     }
 
@@ -182,6 +220,9 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         private const val KEY_SELECTED_LISTS = "selected_lists"
         private const val KEY_CUSTOM_FILTERS = "custom_filters"
         private const val KEY_BUNDLED_FILTER_VERSION = "bundled_filter_version"
+        private const val KEY_LAST_REFRESH_REQUESTED_AT = "last_refresh_requested_at"
+        private const val KEY_LAST_REFRESH_SUCCEEDED_AT = "last_refresh_succeeded_at"
+        private const val KEY_LAST_REFRESH_FAILED_AT = "last_refresh_failed_at"
         private const val BUNDLED_FILTER_VERSION = 2
         private const val TEST_ENGINE = "test_block"
 

@@ -7,7 +7,9 @@ package org.mozilla.fenix.components.nativeprotection
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
+import android.text.format.DateFormat
 import android.widget.EditText
+import java.util.Date
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -70,15 +72,21 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             }
         })
 
-        screen.addPreference(Preference(requireContext()).apply {
+        val updatePreference = Preference(requireContext()).apply {
+            key = UPDATE_KEY
             title = getString(R.string.native_protection_update_filters)
-            summary = getString(R.string.native_protection_update_summary)
+            summary = refreshSummary()
             setOnPreferenceClickListener {
-                engine.refreshFilters()
-                summary = getString(R.string.native_protection_update_started)
+                summary = getString(R.string.native_protection_updating)
+                engine.refreshFilters { success ->
+                    activity?.runOnUiThread {
+                        summary = refreshSummary(success)
+                    }
+                }
                 true
             }
-        })
+        }
+        screen.addPreference(updatePreference)
 
         screen.addPreference(Preference(requireContext()).apply {
             title = getString(R.string.native_protection_custom_filters)
@@ -148,9 +156,52 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.native_protection_title))
+        findPreference<Preference>(UPDATE_KEY)?.summary = refreshSummary()
     }
+
+    private fun refreshSummary(result: Boolean? = null): String {
+        result?.let {
+            return if (it) {
+                getString(
+                    R.string.native_protection_update_applied,
+                    formatRefreshTime(engine.lastRefreshSucceededAt()),
+                )
+            } else {
+                getString(
+                    R.string.native_protection_update_failed,
+                    formatRefreshTime(engine.lastRefreshFailedAt()),
+                )
+            }
+        }
+
+        val requested = engine.lastRefreshRequestedAt()
+        if (requested == 0L) {
+            return getString(R.string.native_protection_update_summary)
+        }
+
+        val succeeded = engine.lastRefreshSucceededAt()
+        val failed = engine.lastRefreshFailedAt()
+        return when {
+            failed >= requested -> getString(
+                R.string.native_protection_update_failed,
+                formatRefreshTime(failed),
+            )
+            succeeded >= requested -> getString(
+                R.string.native_protection_update_applied,
+                formatRefreshTime(succeeded),
+            )
+            else -> getString(
+                R.string.native_protection_update_pending,
+                formatRefreshTime(requested),
+            )
+        }
+    }
+
+    private fun formatRefreshTime(timestamp: Long): String =
+        DateFormat.getTimeFormat(requireContext()).format(Date(timestamp))
 
     companion object {
         private const val FILTER_LISTS_KEY = "sandfox_filter_lists"
+        private const val UPDATE_KEY = "sandfox_filter_update"
     }
 }

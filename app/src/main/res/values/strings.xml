@@ -4241,7 +4241,9 @@
     <string name="native_protection_update_filters">Update selected filters</string>
     <string name="native_protection_update_summary">Refresh selected lists in Gecko native classifier.</string>
     <string name="native_protection_updating">Refreshing filters…</string>
-    <string name="native_protection_update_started">Refresh requested in the background.</string>
+    <string name="native_protection_update_applied">Gecko accepted the refresh request at %1$s.</string>
+    <string name="native_protection_update_failed">Gecko rejected the refresh request at %1$s.</string>
+    <string name="native_protection_update_pending">Refresh requested at %1$s; waiting for Gecko.</string>
     <string name="native_protection_custom_filters">My filters</string>
     <string name="native_protection_custom_filters_message">Enter one uBlock-compatible network filter per line. These rules are stored locally and loaded by the Gecko native classifier.</string>
     <string name="native_protection_custom_filters_summary">Local custom rules are active when native protection is enabled.</string>
