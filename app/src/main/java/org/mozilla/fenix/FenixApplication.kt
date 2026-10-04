@@ -106,6 +106,7 @@ import org.mozilla.fenix.GleanMetrics.TabStrip
 import org.mozilla.fenix.GleanMetrics.TermsOfUse
 import org.mozilla.fenix.GleanMetrics.UserAiSummarize
 import org.mozilla.fenix.components.Components
+import org.mozilla.fenix.components.adblock.SandfoxNativeAdblockBootstrap
 import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.initializeGlean
@@ -339,6 +340,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Here we access the engine property, which will cause the lazy property getter to
         // construct the instance.
         components.core.engine
+
+        // Configure Gecko's existing native adblock-rust ContentClassifier path.
+        // This first slice is deliberately limited to a bundled canary rule so the
+        // native network path can be proven before list management/profile work is added.
+        SandfoxNativeAdblockBootstrap.initialize(applicationContext)
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then

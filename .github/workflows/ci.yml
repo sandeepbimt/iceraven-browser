@@ -8,6 +8,7 @@ on:
       - sandfox/pwa-launch-performance
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
+      - sandfox/adblock-engine-from-85
 
 jobs:
   release-automation:

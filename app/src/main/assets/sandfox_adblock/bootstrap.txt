@@ -1,0 +1,4 @@
+! SANDFOX native adblock canary rule
+! This file is deliberately tiny. It is only used to prove that the
+! Gecko ContentClassifierService reaches the embedded Rust blocker.
+||example.com/sandfox-adblock-canary^
