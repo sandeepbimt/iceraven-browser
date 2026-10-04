@@ -1,27 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "Sandfox Cosmetic Filters",
-  "version": "1.0",
-  "description": "Lightweight cosmetic filtering for Sandfox annoyance and cookie lists.",
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "sandfox-cosmetics@sandfox"
-    }
-  },
-  "permissions": [
-    "storage",
-    "<all_urls>"
-  ],
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": false
-  },
+  "name": "Sandfox Native Protection",
+  "version": "2.0.0",
+  "description": "Sandfox native protection powered by Brave adblock-rust.",
+  "browser_specific_settings": { "gecko": { "id": "sandfox-adblock@sandfox" } },
+  "background": { "scripts": ["background.js"] },
   "content_scripts": [
-    {
-      "matches": ["*://*/*"],
-      "js": ["cosmetic.js"],
-      "run_at": "document_start",
-      "all_frames": false
-    }
-  ]
+    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start", "all_frames": true }
+  ],
+  "permissions": ["webRequest", "webRequestBlocking", "<all_urls>", "nativeMessaging", "geckoViewAddons"]
 }

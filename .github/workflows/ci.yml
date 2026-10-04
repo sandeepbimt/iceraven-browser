@@ -48,6 +48,28 @@ jobs:
           sed -i '/about_content/s/Mozilla/@forkmaintainers/' app/src/*/res/values*/*strings.xml
           sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Build Sandfox Brave adblock engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK=$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$TOOLCHAIN/armv7a-linux-androideabi24-clang"
+          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN/x86_64-linux-android24-clang"
+          cargo build --manifest-path app/src/main/rust/sandfox_adblock/Cargo.toml --release --target aarch64-linux-android
+          cargo build --manifest-path app/src/main/rust/sandfox_adblock/Cargo.toml --release --target armv7-linux-androideabi
+          cargo build --manifest-path app/src/main/rust/sandfox_adblock/Cargo.toml --release --target x86_64-linux-android
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/jniLibs/armeabi-v7a app/src/main/jniLibs/x86_64
+          cp target/aarch64-linux-android/release/libsandfox_adblock.so app/src/main/jniLibs/arm64-v8a/
+          cp target/armv7-linux-androideabi/release/libsandfox_adblock.so app/src/main/jniLibs/armeabi-v7a/
+          cp target/x86_64-linux-android/release/libsandfox_adblock.so app/src/main/jniLibs/x86_64/
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 

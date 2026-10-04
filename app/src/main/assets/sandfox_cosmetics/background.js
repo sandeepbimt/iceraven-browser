@@ -1,0 +1,14 @@
+const NATIVE_APP = "sandfox.cosmetics";
+let state = {enabled:true,ready:false,suspendNetworkUntilReady:true,globalLists:[],customFilters:"",siteListOverrides:{},listUrls:{}};
+let syncPromise = null;
+const builtSites = new Set();
+const native = message => browser.runtime.sendNativeMessage(NATIVE_APP,message).catch(()=>null);
+async function syncState(){if(!syncPromise)syncPromise=native({type:"getConfig"}).then(c=>{if(c?.type==="config")state={...state,...c};return state}).finally(()=>syncPromise=null);return syncPromise}
+async function fetchLists(ids){return Promise.all(ids.map(async id=>{const u=state.listUrls[id];if(!u)return "";try{const r=await fetch(u,{cache:"no-store"});return r.ok?await r.text():""}catch(_){return ""}}))}
+async function buildEngine(host,ids){const lists=await fetchLists(ids);if(!lists.some(Boolean))return false;const r=await native({type:"build",host,lists});if(!r||r.type!=="buildAccepted")return false;const end=Date.now()+30000;while(Date.now()<end){const c=await native({type:"getConfig"});if(c?.type==="config"){state={...state,...c};if((host&&c.siteReady)||(!host&&c.ready)){if(host)builtSites.add(host);return true}}await new Promise(x=>setTimeout(x,100))}return false}
+async function ensureReady(){await syncState();if(!state.enabled||state.ready)return true;return buildEngine("",state.globalLists)}
+const typeMap={main_frame:"document",sub_frame:"subdocument",script:"script",stylesheet:"stylesheet",image:"image",object:"object",object_subrequest:"object",xmlhttprequest:"xmlhttprequest",media:"media",font:"font",websocket:"websocket",ping:"ping",beacon:"beacon",csp_report:"csp",imageset:"image",web_manifest:"other"};
+async function ensureSite(host){host=host.toLowerCase().replace(/^www\./,"");const ids=state.siteListOverrides?.[host];if(!ids||builtSites.has(host))return true;return buildEngine(host,ids)}
+browser.webRequest.onBeforeRequest.addListener(async d=>{if(d.tabId<0)return {};await syncState();if(!state.enabled)return {};if(state.suspendNetworkUntilReady&&!await ensureReady())return {};const source=d.documentUrl||d.originUrl||d.initiator||d.url;let host="";try{host=new URL(source).hostname.replace(/^www\./,"").toLowerCase()}catch(_){}await ensureSite(host);const r=await native({type:"check",url:d.url,source,requestType:typeMap[d.type]||"other",method:d.method||"GET"});return r?.type==="check"&&r.blocked?{cancel:true}:{}} ,{urls:["<all_urls>"]},["blocking"]);
+browser.runtime.onMessage.addListener(async m=>{if(m?.type==="cosmetic"){await syncState();if(!state.enabled)return{type:"cosmetic"};let h=new URL(m.url).hostname.replace(/^www\./,"").toLowerCase();await ensureSite(h);return native({type:"cosmetic",url:m.url})}if(m?.type==="dynamic")return native({type:"dynamic",classes:m.classes||[],ids:m.ids||[],exceptions:m.exceptions||[]})});
+(async()=>{await syncState();if(state.enabled&&(!state.ready||state.forceRefresh))await buildEngine("",state.globalLists)})();

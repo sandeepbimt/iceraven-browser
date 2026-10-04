@@ -14,7 +14,12 @@ import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.preferences.Branch
 import mozilla.components.concept.engine.preferences.SetBrowserPreference
+import mozilla.components.concept.engine.webextension.MessageHandler
+import mozilla.components.concept.engine.webextension.Port
+import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import org.mozilla.fenix.ext.components
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Sandfox V1 native protection controller.
@@ -28,18 +33,185 @@ import org.mozilla.fenix.ext.components
 class NativeProtectionEngine private constructor(private val context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var protectionReady = false
+    @Volatile private var siteReady = false
+    @Volatile private var nativePort: Port? = null
+
     fun initialize() {
         migrateBundledFilters()
         migrateFilterListSelection()
-        applyPreferences()
+        disableGeckoClassifier()
+        protectionReady = !isEnabled() || loadGlobalEngine()
         scheduleUpdates()
     }
+    /**
+     * Installs the built-in cosmetic WebExtension only after WebExtensionSupport has been
+     * initialized by FenixApplication. Calling this from early engine initialization was
+     * unsafe because Gecko's WebExtension subsystem is not ready at that point.
+     */
+    fun installCosmeticEngine() {
+        val runtime = context.components.core.engine as? WebExtensionRuntime ?: return
+        runCatching {
+            runtime.installBuiltInWebExtension(
+                id = COSMETIC_EXTENSION_ID, url = COSMETIC_EXTENSION_URL,
+                onSuccess = { extension ->
+                    extension.registerBackgroundMessageHandler(NATIVE_APP, object : MessageHandler {
+                        override fun onMessage(message: Any, source: mozilla.components.concept.engine.EngineSession?): Any? =
+                            if (message is JSONObject) handleMessage(message) else null
+                        override fun onPortConnected(port: Port) = Unit
+                        override fun onPortDisconnected(port: Port) = Unit
+                    })
+                },
+                onError = { _ -> },
+            )
+        }
+    }
+
+    private fun handleMessage(message: JSONObject): JSONObject = try {
+        when (message.optString("type")) {
+            "getConfig" -> cosmeticConfigMessage().apply { put("ready", !isEnabled() || protectionReady)
+        put("siteReady", siteReady) }
+            "build" -> {
+                val host = message.optString("host").trim().lowercase().removePrefix("www.")
+                val lists = message.optJSONArray("lists")?.toString() ?: "[]"
+                if (lists == "[]") JSONObject().put("type", "buildRejected") else {
+                    if (host.isEmpty()) protectionReady = false else siteReady = false
+                    scope.launch {
+                        val ok = BraveAdblockNative.build(host, lists)
+                        if (ok) BraveAdblockNative.serialize(host)?.let { atomicWrite(engineFile(host), it) }
+                        if (host.isEmpty()) {
+                            protectionReady = ok
+                            if (ok) {
+                                prefs.edit().remove(KEY_COSMETIC_REFRESH_REQUESTED_AT)
+                                    .putLong(KEY_LAST_REFRESH_SUCCEEDED_AT, System.currentTimeMillis()).apply()
+                            }
+                        } else {
+                            siteReady = ok
+                        }
+                    }
+                    JSONObject().put("type", "buildAccepted")
+                }
+            }
+            "check" -> JSONObject().apply {
+                put("type", "check")
+                put("blocked", isEnabled() && BraveAdblockNative.check(message.optString("url"), message.optString("source", message.optString("url")), message.optString("requestType", "other"), message.optString("method", "GET")))
+            }
+            "cosmetic" -> JSONObject().apply {
+                put("type", "cosmetic")
+                val raw = BraveAdblockNative.cosmetic(message.optString("url"))
+                val j = raw?.let(::JSONObject) ?: JSONObject()
+                put("hideSelectors", j.optJSONArray("hide_selectors") ?: JSONArray())
+                put("exceptions", j.optJSONArray("exceptions") ?: JSONArray())
+                put("injectedScript", j.optString("injected_script"))
+                put("generichide", j.optBoolean("generichide", false))
+            }
+            "dynamic" -> JSONObject().apply {
+                put("type", "dynamic")
+                put("selectors", JSONArray(BraveAdblockNative.dynamic(message.optJSONArray("classes")?.toString() ?: "[]", message.optJSONArray("ids")?.toString() ?: "[]", message.optJSONArray("exceptions")?.toString() ?: "[]") ?: "[]"))
+            }
+            else -> JSONObject().put("type", "error")
+        }
+    } catch (_: Throwable) { JSONObject().put("type", "error") }
+    private fun cosmeticConfigMessage(): JSONObject = JSONObject().apply {
+        put("type", "config")
+        put("enabled", isEnabled())
+        put("ready", !isEnabled() || protectionReady)
+        put("suspendNetworkUntilReady", isSuspendNetworkUntilReady())
+        put("globalLists", JSONArray(selectedListIds().toList()))
+        put("customFilters", customFilters())
+        put("siteListOverrides", siteListOverridesJson())
+        put("siteEnabledOverrides", siteEnabledOverridesJson())
+        put("forceRefresh", prefs.getLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, 0L) != 0L)
+        put("listUrls", JSONObject().apply { FILTER_LISTS.forEach { put(it.id, it.url) } })
+    }
+    private fun consumeCosmeticRefreshRequest(): Boolean {
+        val requested = prefs.getLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, 0L)
+        if (requested == 0L) return false
+        prefs.edit().remove(KEY_COSMETIC_REFRESH_REQUESTED_AT).apply()
+        return true
+    }
+
+    fun refreshCosmeticFilters() {
+        prefs.edit().putLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, System.currentTimeMillis()).apply()
+    }
+
+    fun siteListOverride(host: String): Set<String>? {
+        val normalized = normalizeSiteHost(host) ?: return null
+        val sites = siteListOverridesJson()
+        if (!sites.has(normalized)) return null
+        val array = sites.optJSONArray(normalized) ?: return emptySet()
+        return buildSet {
+            for (index in 0 until array.length()) {
+                array.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+            }
+        }
+    }
+
+    fun setSiteListOverride(host: String, ids: Set<String>) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteListOverridesJson()
+        val valid = ids.filterTo(linkedSetOf()) { id -> FILTER_LISTS.any { it.id == id } }
+        sites.put(normalized, JSONArray(valid.toList()))
+        prefs.edit().putString(KEY_SITE_LIST_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun clearSiteListOverride(host: String) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteListOverridesJson()
+        sites.remove(normalized)
+        prefs.edit().putString(KEY_SITE_LIST_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun siteProtectionOverride(host: String): Boolean? {
+        val normalized = normalizeSiteHost(host) ?: return null
+        val sites = siteEnabledOverridesJson()
+        return if (sites.has(normalized)) sites.optBoolean(normalized) else null
+    }
+
+    fun setSiteProtectionOverride(host: String, enabled: Boolean) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteEnabledOverridesJson()
+        sites.put(normalized, enabled)
+        prefs.edit().putString(KEY_SITE_ENABLED_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun clearSiteProtectionOverride(host: String) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteEnabledOverridesJson()
+        sites.remove(normalized)
+        prefs.edit().putString(KEY_SITE_ENABLED_OVERRIDES, sites.toString()).apply()
+    }
+
+    private fun normalizeSiteHost(host: String): String? =
+        host.trim().lowercase().takeIf { it.length in 1..253 && !it.contains('/') && !it.contains(' ') }
+
+    private fun siteListOverridesJson(): JSONObject = runCatching {
+        JSONObject(prefs.getString(KEY_SITE_LIST_OVERRIDES, "{}") ?: "{}")
+    }.getOrDefault(JSONObject())
+
+    private fun siteEnabledOverridesJson(): JSONObject = runCatching {
+        JSONObject(prefs.getString(KEY_SITE_ENABLED_OVERRIDES, "{}") ?: "{}")
+    }.getOrDefault(JSONObject())
 
     fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, true)
 
+    fun isSuspendNetworkUntilReady(): Boolean =
+        prefs.getBoolean(KEY_SUSPEND_NETWORK_UNTIL_READY, true)
+
+    fun setSuspendNetworkUntilReady(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SUSPEND_NETWORK_UNTIL_READY, enabled).apply()
+        publishProtectionState()
+    }
+
     fun setEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
-        applyPreferences()
+        protectionReady = !enabled
+        publishProtectionState()
+        applyPreferences { success ->
+            protectionReady = !enabled || success
+            publishProtectionState()
+        }
         if (enabled) scheduleUpdates()
     }
 
@@ -48,7 +220,14 @@ class NativeProtectionEngine private constructor(private val context: Context) {
 
     fun setSelectedListIds(ids: Set<String>) {
         prefs.edit().putStringSet(KEY_SELECTED_LISTS, ids).apply()
-        if (isEnabled()) applyPreferences(forceReload = true)
+        if (isEnabled()) {
+            protectionReady = false
+            publishProtectionState()
+            applyPreferences(forceReload = true) { success ->
+                protectionReady = !isEnabled() || success
+                publishProtectionState()
+            }
+        }
     }
 
     fun customFilters(): String = prefs.getString(KEY_CUSTOM_FILTERS, "").orEmpty()
@@ -59,7 +238,14 @@ class NativeProtectionEngine private constructor(private val context: Context) {
             "My filters are too large"
         }
         prefs.edit().putString(KEY_CUSTOM_FILTERS, normalized).apply()
-        if (isEnabled()) applyPreferences(forceReload = true)
+        if (isEnabled()) {
+            protectionReady = false
+            publishProtectionState()
+            applyPreferences(forceReload = true) { success ->
+                protectionReady = !isEnabled() || success
+                publishProtectionState()
+            }
+        }
     }
 
     fun lastRefreshRequestedAt(): Long =
@@ -93,75 +279,59 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                     .putLong(KEY_LAST_REFRESH_FAILED_AT, now)
                     .apply()
             }
+            protectionReady = !isEnabled() || success
+            publishProtectionState()
             onResult?.invoke(success)
         }
     }
 
     fun siteExceptionStore() = context.components.core.engine.trackingProtectionExceptionStore
 
+    private fun publishProtectionState() {
+        nativePort?.postMessage(JSONObject().apply {
+            put("type", "protectionState")
+            put("enabled", isEnabled())
+            put("suspendNetworkUntilReady", isSuspendNetworkUntilReady())
+            put("ready", protectionReady)
+        })
+    }
+
     private fun applyPreferences(
         forceReload: Boolean = false,
         onComplete: ((Boolean) -> Unit)? = null,
     ) {
-        val runtime = context.components.core.engine as? BrowserPreferencesRuntime
-            ?: error("Sandfox native protection requires Gecko browser preferences")
-
-        val enabled = isEnabled()
-        val listUrls = buildListUrls()
-        val activeEngines = if (enabled && listUrls.isNotEmpty()) TEST_ENGINE else ""
-
-        val values = listOf(
-            SetBrowserPreference.setBoolPref(PREF_PROTECTION_ENABLED, enabled, Branch.USER),
-            SetBrowserPreference.setStringPref(PREF_PROTECTION_ENGINES, activeEngines, Branch.USER),
-            SetBrowserPreference.setStringPref(PREF_PROTECTION_ENGINES_PBM, activeEngines, Branch.USER),
-        )
-
-        if (forceReload) {
-            runtime.setBrowserPref(
-                PREF_PROTECTION_LIST_URLS,
-                "",
-                Branch.USER,
-                onSuccess = { setListUrls(runtime, listUrls, onComplete) },
-                onError = { setListUrls(runtime, listUrls, onComplete) },
-            )
-        } else {
-            runtime.setBrowserPrefs(
-                values + SetBrowserPreference.setStringPref(
-                    PREF_PROTECTION_LIST_URLS,
-                    listUrls,
-                    Branch.USER,
-                ),
-                onSuccess = { onComplete?.invoke(true) },
-                onError = { onComplete?.invoke(false) },
-            )
-        }
+        disableGeckoClassifier()
+        prefs.edit().putLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, System.currentTimeMillis()).apply()
+        protectionReady = false
+        onComplete?.invoke(true)
     }
 
-    private fun setListUrls(
-        runtime: BrowserPreferencesRuntime,
-        listUrls: String,
-        onComplete: ((Boolean) -> Unit)? = null,
-    ) {
+    private fun disableGeckoClassifier() {
+        val runtime = context.components.core.engine as? BrowserPreferencesRuntime ?: return
         runtime.setBrowserPrefs(
             listOf(
-                SetBrowserPreference.setBoolPref(PREF_PROTECTION_ENABLED, isEnabled(), Branch.USER),
-                SetBrowserPreference.setStringPref(
-                    PREF_PROTECTION_ENGINES,
-                    if (isEnabled() && listUrls.isNotEmpty()) TEST_ENGINE else "",
-                    Branch.USER,
-                ),
-                SetBrowserPreference.setStringPref(
-                    PREF_PROTECTION_ENGINES_PBM,
-                    if (isEnabled() && listUrls.isNotEmpty()) TEST_ENGINE else "",
-                    Branch.USER,
-                ),
-                SetBrowserPreference.setStringPref(PREF_PROTECTION_LIST_URLS, listUrls, Branch.USER),
+                SetBrowserPreference.setBoolPref(PREF_PROTECTION_ENABLED, false, Branch.USER),
+                SetBrowserPreference.setStringPref(PREF_PROTECTION_ENGINES, "", Branch.USER),
+                SetBrowserPreference.setStringPref(PREF_PROTECTION_ENGINES_PBM, "", Branch.USER),
+                SetBrowserPreference.setStringPref(PREF_PROTECTION_LIST_URLS, "", Branch.USER),
             ),
-            onSuccess = { onComplete?.invoke(true) },
-            onError = { onComplete?.invoke(false) },
+            onSuccess = {}, onError = {},
         )
     }
 
+    private fun loadGlobalEngine(): Boolean = runCatching {
+        val file = engineFile("")
+        file.exists() && BraveAdblockNative.load("", file.readBytes())
+    }.getOrDefault(false)
+
+    private fun engineFile(host: String): java.io.File =
+        java.io.File(context.filesDir, "sandfox_adblock").apply { mkdirs() }.resolve(if (host.isEmpty()) "global.dat" else "site_${host.hashCode()}.dat")
+
+    private fun atomicWrite(file: java.io.File, bytes: ByteArray) {
+        val tmp = java.io.File(file.parentFile, file.name + ".tmp")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+    }
     private fun buildListUrls(): String {
         val urls = selectedListIds().mapNotNull { id ->
             FILTER_LISTS.firstOrNull { it.id == id }?.url
@@ -236,7 +406,14 @@ class NativeProtectionEngine private constructor(private val context: Context) {
 
     companion object {
         private const val PREFS = "sandfox_native_protection"
-        private const val KEY_ENABLED = "enabled"
+        private const val COSMETIC_EXTENSION_ID = "sandfox-cosmetics@sandfox"
+        private const val COSMETIC_EXTENSION_URL = "resource://android/assets/sandfox_cosmetics/"
+        private const val NATIVE_APP = "sandfox.cosmetics"
+        private const val KEY_SITE_LIST_OVERRIDES = "site_cosmetic_list_overrides"
+        private const val KEY_SITE_ENABLED_OVERRIDES = "site_cosmetic_enabled_overrides"
+        private const val KEY_COSMETIC_REFRESH_REQUESTED_AT = "cosmetic_refresh_requested_at"
+            private const val KEY_ENABLED = "enabled"
+        private const val KEY_SUSPEND_NETWORK_UNTIL_READY = "suspend_network_until_ready"
         private const val KEY_SELECTED_LISTS = "selected_lists"
         private const val KEY_CUSTOM_FILTERS = "custom_filters"
         private const val KEY_BUNDLED_FILTER_VERSION = "bundled_filter_version"
