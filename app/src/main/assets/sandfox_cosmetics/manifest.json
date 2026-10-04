@@ -1,29 +1,10 @@
 {
   "manifest_version": 2,
-  "name": "Sandfox Cosmetic Filters",
-  "version": "2.0",
-  "description": "Sandfox page-element filtering using selected uBlock, AdGuard and EasyList cosmetic rules.",
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "sandfox-cosmetics@sandfox"
-    }
-  },
-  "permissions": [
-    "storage",
-    "nativeMessaging",
-    "geckoViewAddons",
-    "<all_urls>"
-  ],
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": false
-  },
-  "content_scripts": [
-    {
-      "matches": ["*://*/*"],
-      "js": ["cosmetic.js"],
-      "run_at": "document_start",
-      "all_frames": false
-    }
-  ]
+  "name": "Sandfox Native Protection",
+  "version": "3.0.0",
+  "description": "Sandfox native protection powered by Brave adblock-rust.",
+  "browser_specific_settings": {"gecko": {"id": "sandfox-adblock@sandfox"}},
+  "background": {"scripts": ["background.js"], "persistent": true},
+  "content_scripts": [{"matches": ["<all_urls>"], "js": ["cosmetic.js"], "run_at": "document_start", "all_frames": true}],
+  "permissions": ["webRequest","webRequestBlocking","<all_urls>","nativeMessaging","geckoViewAddons"]
 }
