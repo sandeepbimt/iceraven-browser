@@ -110,7 +110,9 @@ function parseList(text) {
     const selector = parseSelector(line.slice(operator + (isException ? 3 : 2)));
     if (!selector) continue;
 
-    const domains = domainPart ? domainPart.split(",").map(d => d.trim().toLowerCase()) : ["*"];
+    const domains = domainPart
+      ? domainPart.split(",").map(d => d.trim().toLowerCase().replace(/^www\./, ""))
+      : ["*"];
     const positives = domains.filter(d => d && !d.startsWith("~") && d !== "*");
     const negatives = domains.filter(d => d.startsWith("~")).map(d => d.slice(1)).filter(Boolean);
 
@@ -135,13 +137,20 @@ function parseList(text) {
 }
 
 async function refreshSelected(force = false) {
-  const selected = Array.isArray(config.globalLists) ? config.globalLists : [];
+  const selected = new Set(
+    Array.isArray(config.globalLists) ? config.globalLists : []
+  );
+  for (const ids of Object.values(config.siteListOverrides || {})) {
+    if (Array.isArray(ids)) {
+      for (const id of ids) selected.add(id);
+    }
+  }
   const cached = (await browser.storage.local.get(CACHE_KEY))[CACHE_KEY] || {};
   const now = Date.now();
   const next = { ...cached };
   let changed = false;
 
-  await Promise.all(selected.map(async id => {
+  await Promise.all(Array.from(selected).map(async id => {
     const url = LIST_URLS[id];
     if (!url) return;
 
@@ -165,7 +174,6 @@ async function refreshSelected(force = false) {
   if (changed) {
     await browser.storage.local.set({ [CACHE_KEY]: next });
   }
-  applyCosmetics();
 }
 
 async function syncConfig() {

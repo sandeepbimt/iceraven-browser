@@ -341,10 +341,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // construct the instance.
         components.core.engine
 
-        // Configure Gecko's native adblock-rust classifier without installing a WebExtension.
-        applicationScope.launch(IO) {
-            NativeProtectionEngine.get(applicationContext).initialize()
-        }
+        // Configure Gecko's native adblock-rust classifier after the Gecko engine instance
+        // exists. Browser preference APIs are GeckoView APIs and must not race engine startup
+        // from an IO coroutine.
+        NativeProtectionEngine.get(applicationContext).initialize()
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then

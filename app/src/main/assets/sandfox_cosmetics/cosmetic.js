@@ -3,7 +3,7 @@ const STYLE_ID = "sandfox-cosmetic-filters";
 
 function safeHost(host) {
   return typeof host === "string" && host.length > 0 && host.length <= 253
-    ? host.toLowerCase()
+    ? host.toLowerCase().replace(/^www\./, "")
     : "";
 }
 
@@ -88,7 +88,8 @@ async function applyCosmetics() {
     const domains = line.slice(0, op).trim();
     const selector = line.slice(op + (exception ? 3 : 2)).trim();
     if (!selector || (domains && domains !== "*" &&
-        !domains.split(",").some(d => domainMatches(host, d.trim().toLowerCase())))) continue;
+        !domains.split(",").some(d =>
+          domainMatches(host, d.trim().toLowerCase().replace(/^www\./, ""))))) continue;
     if (exception) {
       customExceptions.add(selector);
     } else if (!selector.startsWith("+js(") &&
