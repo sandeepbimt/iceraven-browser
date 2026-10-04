@@ -28,6 +28,15 @@ if (gradle.mozconfig.substs.MOZILLA_OFFICIAL && !project.hasProperty('android-li
 
 apply from: 'benchmark.gradle'
 
+// SANDFOX M1: allow CI/local builds to consume a locally built GeckoView.
+if (gradle.hasProperty("localProperties.dependencySubstitutions.geckoviewTopsrcdir")) {
+    ext.topsrcdir = gradle."localProperties.dependencySubstitutions.geckoviewTopsrcdir"
+    if (gradle.hasProperty("localProperties.dependencySubstitutions.geckoviewTopobjdir")) {
+        ext.topobjdir = gradle."localProperties.dependencySubstitutions.geckoviewTopobjdir"
+    }
+    apply from: "${topsrcdir}/substitute-local-geckoview.gradle"
+}
+
 def isAppBundle = gradle.startParameter.taskNames.any { it.toLowerCase().contains("bundle") }
 
 android {
