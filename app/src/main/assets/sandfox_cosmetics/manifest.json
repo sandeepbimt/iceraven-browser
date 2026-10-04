@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "Sandfox Cosmetic Filters",
+  "version": "1.0",
+  "description": "Lightweight cosmetic filtering for Sandfox annoyance and cookie lists.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sandfox-cosmetics@sandfox"
+    }
+  },
+  "permissions": [
+    "storage",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["cosmetic.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
