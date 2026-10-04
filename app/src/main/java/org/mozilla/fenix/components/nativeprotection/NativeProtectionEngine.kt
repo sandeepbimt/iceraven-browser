@@ -10,6 +10,9 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.preferences.Branch
