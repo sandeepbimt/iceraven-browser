@@ -6,7 +6,7 @@ import mozilla.components.concept.engine.webextension.MessageHandler
 import mozilla.components.concept.engine.webextension.Port
 import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import org.json.JSONObject
-import org.mozilla.fenix.components.components
+import org.mozilla.fenix.ext.components
 
 object ElementPickerController {
     private const val EXTENSION_ID = "sandfox-element-picker@sandfox"
