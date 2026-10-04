@@ -19,6 +19,7 @@ import mozilla.components.service.sync.autofill.GeckoCreditCardsAddressesStorage
 import mozilla.components.service.sync.logins.GeckoLoginStorageDelegate
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionEngine
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.geckoview.GeckoRuntime
@@ -47,6 +48,7 @@ object GeckoProvider {
         loginStorage: Lazy<LoginsStorage>,
         policy: TrackingProtectionPolicy,
     ): GeckoRuntime {
+        NativeProtectionEngine.get(context.applicationContext).prepareGeckoStartupConfig()
         val runtimeSettings = createRuntimeSettings(context, policy)
 
         val settings = context.components.settings
@@ -127,6 +129,9 @@ object GeckoProvider {
                 .isolatedProcessEnabled(context.components.settings.isIsolatedProcessEnabled)
                 .appZygoteProcessEnabled(context.components.settings.isAppZygoteEnabled)
                 .fissionEnabled(context.components.settings.isFissionEnabled)
+                .configFilePath(
+                    java.io.File(context.filesDir, "sandfox-geckoview-config.yaml").absolutePath
+                )
 
         return builder.build()
     }

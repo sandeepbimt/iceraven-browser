@@ -32,6 +32,40 @@ import org.json.JSONObject
 class NativeProtectionEngine private constructor(private val context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /**
+     * Seeds the native ContentClassifier preferences before GeckoRuntime is created.
+     *
+     * The normal BrowserPreferencesRuntime path remains authoritative for live changes, but
+     * those writes are asynchronous. On a cold start the restored tab can begin navigation
+     * before that first rebuild completes. GeckoView configFilePath lets us provide the same
+     * values during runtime construction, eliminating that startup race.
+     */
+    fun prepareGeckoStartupConfig() {
+        migrateBundledFilters()
+        migrateFilterListSelection()
+
+        val enabled = isEnabled()
+        val listUrls = buildListUrls()
+        val engines = if (enabled && listUrls.isNotEmpty()) TEST_ENGINE else ""
+        val yaml = buildString {
+            appendLine("prefs:")
+            appendLine("  $PREF_PROTECTION_ENABLED: $enabled")
+            appendLine("  $PREF_PROTECTION_ENGINES: \"\${escapeYaml(engines)}\"")
+            appendLine("  $PREF_PROTECTION_ENGINES_PBM: \"\${escapeYaml(engines)}\"")
+            appendLine("  $PREF_PROTECTION_LIST_URLS: \"\${escapeYaml(listUrls)}\"")
+        }
+
+        val target = java.io.File(context.filesDir, STARTUP_CONFIG_FILE)
+        val temporary = java.io.File(context.filesDir, "$STARTUP_CONFIG_FILE.tmp")
+        temporary.writeText(yaml, Charsets.UTF_8)
+        if (!temporary.renameTo(target)) {
+            temporary.copyTo(target, overwrite = true)
+            temporary.delete()
+        }
+    }
+
+    private fun escapeYaml(list: String): String =
+        list.replace("\\\\", "\\\\\\\\").replace("\"", "\\\"")
     fun initialize() {
         migrateBundledFilters()
         migrateFilterListSelection()
@@ -363,6 +397,7 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         private const val KEY_FILTER_LIST_VERSION = "filter_list_version"
         private const val FILTER_LIST_VERSION = 2
         private const val TEST_ENGINE = "test_block"
+        private const val STARTUP_CONFIG_FILE = "sandfox-geckoview-config.yaml"
 
         private const val PREF_PROTECTION_ENABLED =
             "privacy.trackingprotection.content.protection.enabled"
