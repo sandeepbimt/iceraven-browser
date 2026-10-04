@@ -185,7 +185,10 @@ async function syncConfig() {
     if (nativeConfig && typeof nativeConfig === "object") {
       config = nativeConfig;
       await browser.storage.local.set({ [CONFIG_KEY]: config });
-      await refreshSelected(Boolean(config.forceRefresh));
+      // Do not make the first page wait for filter-list downloads. The native Gecko
+      // network engine is already the authoritative blocker; cosmetic cache refresh
+      // is background work and must not sit on the page-load critical path.
+      void refreshSelected(Boolean(config.forceRefresh));
     }
   } catch (_) {}
 }

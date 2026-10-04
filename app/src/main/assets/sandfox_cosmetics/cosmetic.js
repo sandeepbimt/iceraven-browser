@@ -11,6 +11,24 @@ function domainMatches(host, domain) {
   return host === domain || host.endsWith("." + domain);
 }
 
+function genericSelectorKey(selector) {
+  const match = String(selector || "").match(/^(?:[a-z][a-z0-9_-]*)?([.#])([a-zA-Z0-9_-]+)/);
+  return match ? match[1] + match[2] : "";
+}
+
+function pageGenericKeys() {
+  const keys = new Set();
+  const root = document.documentElement;
+  if (!root) return keys;
+  for (const element of root.querySelectorAll("[class],[id]")) {
+    for (const name of element.classList || []) keys.add("." + name);
+    if (element.id) keys.add("#" + element.id);
+  }
+  if (root.id) keys.add("#" + root.id);
+  for (const name of root.classList || []) keys.add("." + name);
+  return keys;
+}
+
 async function applyCosmetics() {
   const host = safeHost(location.hostname);
   if (!host) return;
@@ -65,8 +83,22 @@ async function applyCosmetics() {
     for (const item of selectors) matchingExceptions.add(item.s);
   }
 
+  // Brave's native cosmetic cache avoids injecting every generic selector into
+  // every page. Mirror that keying strategy here until Gecko exposes the native
+  // CosmeticFilterCache API to the Android embedding layer: only generic rules
+  // whose leading class/id is actually present on this document are injected.
+  const genericKeys = pageGenericKeys();
+  const genericApplied = new Set();
   for (const item of rules["*"] || []) {
-    if (!matchingExceptions.has(item.s)) add(item);
+    if (matchingExceptions.has(item.s)) continue;
+    const key = genericSelectorKey(item.s);
+    if (key ? genericKeys.has(key) : /(?:ad|ads|advert|sponsor|promot|cookie|consent|newsletter|notification|social|popup|modal|overlay|banner|paywall)/i.test(item.s)) {
+      const dedupe = item.s + "\u0000" + item.st;
+      if (!genericApplied.has(dedupe)) {
+        genericApplied.add(dedupe);
+        add(item);
+      }
+    }
   }
 
   for (const [domain, selectors] of Object.entries(rules)) {
@@ -114,6 +146,40 @@ async function applyCosmetics() {
   }
 
   style.textContent = output.map(item => item.s + "{" + item.st + "}").join("\n");
+
+  // CSS rules automatically cover future matching nodes. The observer only discovers
+  // newly introduced class/id keys so generic rules stay selective on SPAs and
+  // lazy-loaded pages without rescanning the whole DOM.
+  const observedKeys = new Set(genericKeys);
+  const observer = new MutationObserver(mutations => {
+    const pendingKeys = new Set();
+    let inspected = 0;
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        for (const element of [node, ...node.querySelectorAll("[class],[id]")]) {
+          for (const name of element.classList || []) pendingKeys.add("." + name);
+          if (element.id) pendingKeys.add("#" + element.id);
+          if (++inspected >= 250) break;
+        }
+        if (inspected >= 250) break;
+      }
+      if (inspected >= 250) break;
+    }
+    const additions = [];
+    for (const key of pendingKeys) {
+      if (observedKeys.has(key)) continue;
+      observedKeys.add(key);
+      for (const item of rules["*"] || []) {
+        if (matchingExceptions.has(item.s)) continue;
+        if (genericSelectorKey(item.s) !== key) continue;
+        const rule = item.s + "{" + item.st + "}";
+        if (!style.textContent.includes(rule)) additions.push(rule);
+      }
+    }
+    if (additions.length) style.textContent += (style.textContent ? "\n" : "") + additions.join("\n");
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 applyCosmetics();
