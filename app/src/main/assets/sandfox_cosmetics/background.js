@@ -134,6 +134,40 @@ function parseList(text) {
   return { rules, exceptions };
 }
 
+async function refreshSelected(force = false) {
+  const selected = Array.isArray(config.globalLists) ? config.globalLists : [];
+  const cached = (await browser.storage.local.get(CACHE_KEY))[CACHE_KEY] || {};
+  const now = Date.now();
+  const next = { ...cached };
+  let changed = false;
+
+  await Promise.all(selected.map(async id => {
+    const url = LIST_URLS[id];
+    if (!url) return;
+
+    const cachedList = next[id];
+    if (!force && cachedList && now - Number(cachedList.updatedAt || 0) < REFRESH_MS) return;
+
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) return;
+      const text = await response.text();
+      const parsed = parseList(text);
+      next[id] = {
+        rules: parsed.rules,
+        exceptions: parsed.exceptions,
+        updatedAt: now
+      };
+      changed = true;
+    } catch (_) {}
+  }));
+
+  if (changed) {
+    await browser.storage.local.set({ [CACHE_KEY]: next });
+  }
+  applyCosmetics();
+}
+
 async function syncConfig() {
   try {
     const nativeConfig = await browser.runtime.sendNativeMessage(
