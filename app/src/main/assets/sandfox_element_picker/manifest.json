@@ -1,0 +1,9 @@
+{
+  "manifest_version": 2,
+  "name": "Sandfox Element Picker",
+  "version": "1.0",
+  "description": "On-demand element picker and site cosmetic rules.",
+  "browser_specific_settings": {"gecko": {"id": "sandfox-element-picker@sandfox"}},
+  "background": {"scripts": ["background.js"], "persistent": false},
+  "permissions": ["geckoViewAddons", "nativeMessaging", "nativeMessagingFromContent", "tabs", "storage", "<all_urls>"]
+}

@@ -9,6 +9,7 @@ on:
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
       - sandfox/native-protection-v1-clean
+      - sandfox/native-protection-v2-annoyances-picker
 
 jobs:
   release-automation:

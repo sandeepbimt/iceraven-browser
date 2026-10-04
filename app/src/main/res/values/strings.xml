@@ -4249,4 +4249,7 @@
     <string name="native_protection_custom_filters_summary">Local custom rules are active when native protection is enabled.</string>
     <string name="native_protection_engine">Native engine</string>
     <string name="native_protection_engine_summary">Gecko ContentClassifierService + adblock-rust. No WebExtension is installed.</string>
+    <string name="native_protection_element_picker">Pick element to block</string>
+    <string name="native_protection_element_picker_confirm">Block selector:\n%1$s\nMatches: %2$d</string>
+    <string name="native_protection_element_picker_block">Block</string>
 </resources>

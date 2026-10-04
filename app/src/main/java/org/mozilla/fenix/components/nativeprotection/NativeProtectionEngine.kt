@@ -30,6 +30,7 @@ class NativeProtectionEngine private constructor(private val context: Context) {
 
     fun initialize() {
         migrateBundledFilters()
+        migrateFilterListSelection()
         applyPreferences()
         scheduleUpdates()
     }
@@ -192,6 +193,25 @@ class NativeProtectionEngine private constructor(private val context: Context) {
             .apply()
     }
 
+    private fun migrateFilterListSelection() {
+        val currentVersion = prefs.getInt(KEY_FILTER_LIST_VERSION, 0)
+        if (currentVersion >= FILTER_LIST_VERSION) return
+
+        val selected = prefs.getStringSet(KEY_SELECTED_LISTS, null)?.toMutableSet()
+        if (selected != null) {
+            selected += "ublock-annoyances"
+            selected += "adguard-annoyances"
+            prefs.edit()
+                .putStringSet(KEY_SELECTED_LISTS, selected)
+                .putInt(KEY_FILTER_LIST_VERSION, FILTER_LIST_VERSION)
+                .apply()
+        } else {
+            prefs.edit()
+                .putInt(KEY_FILTER_LIST_VERSION, FILTER_LIST_VERSION)
+                .apply()
+        }
+    }
+
     private fun normalizeFilterText(filters: String): String =
         filters.lineSequence()
             .map { it.trim() }
@@ -224,6 +244,8 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         private const val KEY_LAST_REFRESH_SUCCEEDED_AT = "last_refresh_succeeded_at"
         private const val KEY_LAST_REFRESH_FAILED_AT = "last_refresh_failed_at"
         private const val BUNDLED_FILTER_VERSION = 2
+        private const val KEY_FILTER_LIST_VERSION = "filter_list_version"
+        private const val FILTER_LIST_VERSION = 2
         private const val TEST_ENGINE = "test_block"
 
         private const val PREF_PROTECTION_ENABLED =
@@ -245,7 +267,7 @@ class NativeProtectionEngine private constructor(private val context: Context) {
             "adguard-spyware-url", "urlhaus-1", "curben-phishing", "plowe-0", "dpollock-0",
             "fanboy-cookiemonster", "adguard-cookies", "ublock-cookies-adguard",
             "fanboy-social", "adguard-social", "fanboy-thirdparty_social",
-            "fanboy-ai-suggestions", "easylist-chat", "easylist-newsletters",
+            "fanboy-ai-suggestions", "ublock-annoyances", "adguard-annoyances", "easylist-chat", "easylist-newsletters",
             "easylist-notifications", "easylist-annoyances", "IND-0",
         )
 
@@ -290,6 +312,10 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                 "https://secure.fanboy.co.nz/fanboy-antifacebook.txt"),
             FilterListDefinition("fanboy-ai-suggestions", "EasyList – AI Widgets",
                 "https://ublockorigin.github.io/uAssets/thirdparties/easylist-ai.txt"),
+            FilterListDefinition("ublock-annoyances", "uBlock filters – Annoyances",
+                "https://ublockorigin.github.io/uAssets/filters/annoyances.txt"),
+            FilterListDefinition("adguard-annoyances", "AdGuard – Annoyances",
+                "https://filters.adtidy.org/extension/ublock/filters/14.txt"),
             FilterListDefinition("easylist-chat", "EasyList – Chat Widgets",
                 "https://ublockorigin.github.io/uAssets/thirdparties/easylist-chat.txt"),
             FilterListDefinition("easylist-newsletters", "EasyList – Newsletter Notices",
