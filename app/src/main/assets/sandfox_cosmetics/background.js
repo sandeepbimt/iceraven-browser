@@ -192,8 +192,5 @@ browser.runtime.onInstalled.addListener(() => syncConfig());
 browser.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[CONFIG_KEY]) {
     config = changes[CONFIG_KEY].newValue || config;
-    applyCosmetics();
   }
 });
-
-applyCosmetics();
