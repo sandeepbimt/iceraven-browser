@@ -11,6 +11,7 @@ on:
       - sandfox/native-protection-v1-clean
       - sandfox/native-protection-v2-annoyances-picker
       - sandfox/adblock-brave-ublock-v1
+      - sandfox/m1-native-engine-integration
 
 jobs:
   release-automation:
@@ -34,6 +35,33 @@ jobs:
 
       - name: Inspect memory
         run: free -h
+
+      - name: Checkout pinned Sandfox Gecko
+        run: |
+          set -e
+          git clone --depth 1 --no-tags --branch sandfox/m1-native-engine-cache https://github.com/sandeepbimt/sandfox-gecko.git sandfox-gecko
+          test "$(git -C sandfox-gecko rev-parse HEAD)" = "f242c984e5a4dce93ac9beb802d3a65149cfdf77"
+
+      - name: Configure and build Sandfox GeckoView
+        working-directory: sandfox-gecko
+        run: |
+          set -e
+          ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android"
+          cat > .mozconfig <<'EOF'
+          ac_add_options --enable-project=mobile/android
+          ac_add_options --target=aarch64
+          ac_add_options --enable-optimize
+          ac_add_options --disable-debug
+          ac_add_options --disable-tests
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-aarch64-unknown-linux-android
+          EOF
+          ./mach build
+
+      - name: Configure local GeckoView substitution
+        run: |
+          printf '\ndependencySubstitutions.geckoviewTopsrcdir=%s\ndependencySubstitutions.geckoviewTopobjdir=%s\n' \
+            "$GITHUB_WORKSPACE/sandfox-gecko" \
+            "$GITHUB_WORKSPACE/sandfox-gecko/obj-aarch64-unknown-linux-android" >> local.properties
 
       - name: Create version name
         run: echo "VERSION_NAME=$(git describe --tags HEAD)" >> $GITHUB_ENV
