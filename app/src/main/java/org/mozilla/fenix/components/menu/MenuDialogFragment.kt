@@ -715,7 +715,7 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                                     .setNegativeButton(android.R.string.cancel, null)
                                                                     .setPositiveButton(R.string.native_protection_element_picker_block) { _, _ ->
                                                                         ElementPickerController.addRule(requireContext(), domain, selector)
-                                                                        selectedTab?.id?.let { tabId ->
+                                                                        selectedTab.id.let { tabId ->
                                                                             components.useCases.sessionUseCases.reload.invoke(tabId)
                                                                         }
                                                                     }
