@@ -17,6 +17,8 @@ import mozilla.components.concept.engine.preferences.SetBrowserPreference
 import mozilla.components.concept.engine.webextension.MessageHandler
 import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import org.mozilla.fenix.ext.components
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Sandfox V1 native protection controller.
@@ -56,7 +58,7 @@ class NativeProtectionEngine private constructor(private val context: Context) {
                         }
                     })
                 },
-                onError = { _, _ -> },
+                onError = { _ -> },
             )
         } catch (_: Throwable) {
             // Cosmetic filtering is additive. A WebExtension installation failure must never
