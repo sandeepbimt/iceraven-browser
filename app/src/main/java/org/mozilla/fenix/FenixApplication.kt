@@ -369,6 +369,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         components.strictMode.enableStrictMode(true)
 
         initializeWebExtensionSupport()
+        NativeProtectionEngine.get(applicationContext).installCosmeticEngine()
 
         // Make sure to call this function before registering a storage worker
         // (e.g. components.core.historyStorage.registerStorageMaintenanceWorker())

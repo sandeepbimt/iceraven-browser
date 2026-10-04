@@ -43,7 +43,6 @@ internal fun MoreSettingsSubmenu(
     isPrivate: Boolean,
     onWebCompatReporterClick: () -> Unit,
     onNativeProtectionClick: () -> Unit = {},
-    onElementPickerClick: () -> Unit = {},
     onSummarizePageMenuExposed: () -> Unit,
     onSummarizePageClick: () -> Unit,
     onShortcutsMenuClick: () -> Unit,
@@ -69,7 +68,6 @@ internal fun MoreSettingsSubmenu(
             onMoveToNonPrivateTabMenuClick = onMoveToNonPrivateTabMenuClick,
         )
         NativeProtectionMenuItem(onClick = onNativeProtectionClick)
-        ElementPickerMenuItem(onClick = onElementPickerClick)
         WebCompatReporterMenuItem(
             isWebCompatEnabled = isWebCompatEnabled,
             onWebCompatReporterClick = onWebCompatReporterClick,
@@ -107,15 +105,6 @@ private fun NativeProtectionMenuItem(onClick: () -> Unit) {
     MenuItem(
         label = stringResource(id = R.string.native_protection_menu),
         beforeIconPainter = painterResource(id = R.drawable.ic_kit_shield_on_state),
-        onClick = onClick,
-    )
-}
-
-@Composable
-private fun ElementPickerMenuItem(onClick: () -> Unit) {
-    MenuItem(
-        label = stringResource(id = R.string.native_protection_element_picker),
-        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lightbulb_24),
         onClick = onClick,
     )
 }

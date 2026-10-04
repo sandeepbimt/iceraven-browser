@@ -81,7 +81,6 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.appstate.SupportedMenuNotifications
 import org.mozilla.fenix.components.components
-import org.mozilla.fenix.components.nativeprotection.ElementPickerController
 import org.mozilla.fenix.components.menu.compose.Addons
 import org.mozilla.fenix.components.menu.compose.CustomTabAddons
 import org.mozilla.fenix.components.menu.compose.CustomTabMenu
@@ -702,27 +701,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                 },
                                                 onNativeProtectionClick = {
                                                     menuStore.dispatch(MenuAction.Navigate.NativeProtection)
-                                                },
-                                                onElementPickerClick = {
-                                                    val session = selectedTab?.engineState?.engineSession
-                                                    if (session != null) {
-                                                        dismiss()
-                                                        requireActivity().window.decorView.postDelayed({
-                                                            ElementPickerController.start(requireContext(), session) { domain, selector, matches ->
-                                                                MaterialAlertDialogBuilder(requireContext())
-                                                                    .setTitle(R.string.native_protection_element_picker)
-                                                                    .setMessage(getString(R.string.native_protection_element_picker_confirm, selector, matches))
-                                                                    .setNegativeButton(android.R.string.cancel, null)
-                                                                    .setPositiveButton(R.string.native_protection_element_picker_block) { _, _ ->
-                                                                        ElementPickerController.addRule(requireContext(), domain, selector)
-                                                                        selectedTab.id.let { tabId ->
-                                                                            components.useCases.sessionUseCases.reload.invoke(tabId)
-                                                                        }
-                                                                    }
-                                                                    .show()
-                                                            }
-                                                        }, 250L)
-                                                    }
                                                 },
                                                 onSummarizePageMenuExposed = {
                                                     menuStore.dispatch(MenuAction.OnSummarizationMenuExposed)

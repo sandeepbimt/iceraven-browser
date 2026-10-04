@@ -14,6 +14,8 @@ import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.preferences.Branch
 import mozilla.components.concept.engine.preferences.SetBrowserPreference
+import mozilla.components.concept.engine.webextension.MessageHandler
+import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import org.mozilla.fenix.ext.components
 
 /**
@@ -34,6 +36,112 @@ class NativeProtectionEngine private constructor(private val context: Context) {
         applyPreferences()
         scheduleUpdates()
     }
+
+    /**
+     * Installs the built-in cosmetic WebExtension only after WebExtensionSupport has been
+     * initialized by FenixApplication. Calling this from early engine initialization was
+     * unsafe because Gecko's WebExtension subsystem is not ready at that point.
+     */
+    fun installCosmeticEngine() {
+        val runtime = context.components.core.engine as? WebExtensionRuntime ?: return
+        try {
+            runtime.installBuiltInWebExtension(
+                id = COSMETIC_EXTENSION_ID,
+                url = COSMETIC_EXTENSION_URL,
+                onSuccess = { extension ->
+                    extension.registerBackgroundMessageHandler(NATIVE_APP, object : MessageHandler {
+                        override fun onMessage(message: Any, source: mozilla.components.concept.engine.EngineSession?): Any? {
+                            if (message !is JSONObject || message.optString("type") != "getConfig") return null
+                            return cosmeticConfigMessage()
+                        }
+                    })
+                },
+                onError = { _, _ -> },
+            )
+        } catch (_: Throwable) {
+            // Cosmetic filtering is additive. A WebExtension installation failure must never
+            // make the browser itself fail to start.
+        }
+    }
+
+    private fun cosmeticConfigMessage(): JSONObject = JSONObject().apply {
+        put("type", "config")
+        put("enabled", isEnabled())
+        put("globalLists", JSONArray(selectedListIds().toList()))
+        put("customFilters", customFilters())
+        put("siteListOverrides", siteListOverridesJson())
+        put("siteEnabledOverrides", siteEnabledOverridesJson())
+        put("forceRefresh", consumeCosmeticRefreshRequest())
+    }
+
+    private fun consumeCosmeticRefreshRequest(): Boolean {
+        val requested = prefs.getLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, 0L)
+        if (requested == 0L) return false
+        prefs.edit().remove(KEY_COSMETIC_REFRESH_REQUESTED_AT).apply()
+        return true
+    }
+
+    fun refreshCosmeticFilters() {
+        prefs.edit().putLong(KEY_COSMETIC_REFRESH_REQUESTED_AT, System.currentTimeMillis()).apply()
+    }
+
+    fun siteListOverride(host: String): Set<String>? {
+        val normalized = normalizeSiteHost(host) ?: return null
+        val sites = siteListOverridesJson()
+        if (!sites.has(normalized)) return null
+        val array = sites.optJSONArray(normalized) ?: return emptySet()
+        return buildSet {
+            for (index in 0 until array.length()) {
+                array.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+            }
+        }
+    }
+
+    fun setSiteListOverride(host: String, ids: Set<String>) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteListOverridesJson()
+        val valid = ids.filterTo(linkedSetOf()) { id -> FILTER_LISTS.any { it.id == id } }
+        sites.put(normalized, JSONArray(valid.toList()))
+        prefs.edit().putString(KEY_SITE_LIST_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun clearSiteListOverride(host: String) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteListOverridesJson()
+        sites.remove(normalized)
+        prefs.edit().putString(KEY_SITE_LIST_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun siteProtectionOverride(host: String): Boolean? {
+        val normalized = normalizeSiteHost(host) ?: return null
+        val sites = siteEnabledOverridesJson()
+        return if (sites.has(normalized)) sites.optBoolean(normalized) else null
+    }
+
+    fun setSiteProtectionOverride(host: String, enabled: Boolean) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteEnabledOverridesJson()
+        sites.put(normalized, enabled)
+        prefs.edit().putString(KEY_SITE_ENABLED_OVERRIDES, sites.toString()).apply()
+    }
+
+    fun clearSiteProtectionOverride(host: String) {
+        val normalized = normalizeSiteHost(host) ?: return
+        val sites = siteEnabledOverridesJson()
+        sites.remove(normalized)
+        prefs.edit().putString(KEY_SITE_ENABLED_OVERRIDES, sites.toString()).apply()
+    }
+
+    private fun normalizeSiteHost(host: String): String? =
+        host.trim().lowercase().takeIf { it.length in 1..253 && !it.contains('/') && !it.contains(' ') }
+
+    private fun siteListOverridesJson(): JSONObject = runCatching {
+        JSONObject(prefs.getString(KEY_SITE_LIST_OVERRIDES, "{}") ?: "{}")
+    }.getOrDefault(JSONObject())
+
+    private fun siteEnabledOverridesJson(): JSONObject = runCatching {
+        JSONObject(prefs.getString(KEY_SITE_ENABLED_OVERRIDES, "{}") ?: "{}")
+    }.getOrDefault(JSONObject())
 
     fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, true)
 
@@ -236,7 +344,13 @@ class NativeProtectionEngine private constructor(private val context: Context) {
 
     companion object {
         private const val PREFS = "sandfox_native_protection"
-        private const val KEY_ENABLED = "enabled"
+        private const val COSMETIC_EXTENSION_ID = "sandfox-cosmetics@sandfox"
+        private const val COSMETIC_EXTENSION_URL = "resource://android/assets/sandfox_cosmetics/"
+        private const val NATIVE_APP = "sandfox.cosmetics"
+        private const val KEY_SITE_LIST_OVERRIDES = "site_cosmetic_list_overrides"
+        private const val KEY_SITE_ENABLED_OVERRIDES = "site_cosmetic_enabled_overrides"
+        private const val KEY_COSMETIC_REFRESH_REQUESTED_AT = "cosmetic_refresh_requested_at"
+            private const val KEY_ENABLED = "enabled"
         private const val KEY_SELECTED_LISTS = "selected_lists"
         private const val KEY_CUSTOM_FILTERS = "custom_filters"
         private const val KEY_BUNDLED_FILTER_VERSION = "bundled_filter_version"

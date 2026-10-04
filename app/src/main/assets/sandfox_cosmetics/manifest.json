@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Sandfox Cosmetic Filters",
-  "version": "1.0",
-  "description": "Lightweight cosmetic filtering for Sandfox annoyance and cookie lists.",
+  "version": "2.0",
+  "description": "Sandfox page-element filtering using selected uBlock, AdGuard and EasyList cosmetic rules.",
   "browser_specific_settings": {
     "gecko": {
       "id": "sandfox-cosmetics@sandfox"
@@ -10,6 +10,8 @@
   },
   "permissions": [
     "storage",
+    "nativeMessaging",
+    "geckoViewAddons",
     "<all_urls>"
   ],
   "background": {

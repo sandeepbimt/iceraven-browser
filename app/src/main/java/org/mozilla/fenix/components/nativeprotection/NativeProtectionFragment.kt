@@ -31,6 +31,7 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             isChecked = engine.isEnabled()
             setOnPreferenceChangeListener { _, value ->
                 engine.setEnabled(value as Boolean)
+                reloadSelectedTab()
                 true
             }
         })
@@ -40,27 +41,45 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             requireComponents.core.store.state.tabs.firstOrNull { it.id == id }
                 ?: requireComponents.core.store.state.customTabs.firstOrNull { it.id == id }
         }
-        val host = selectedTab?.content?.url?.let { Uri.parse(it).host }
+        val host = selectedTab?.content?.url?.let { Uri.parse(it).host?.lowercase()?.removePrefix("www.") }
         val trackingProtectionUseCases = requireComponents.useCases.trackingProtectionUseCases
 
         screen.addPreference(SwitchPreferenceCompat(requireContext()).apply {
             title = getString(R.string.native_protection_this_site)
             summary = host ?: getString(R.string.native_protection_no_site)
             isEnabled = selectedTabId != null && host != null
-            isChecked = true
+            isChecked = host?.let { engine.siteProtectionOverride(it) } ?: true
             selectedTabId?.let { tabId ->
                 trackingProtectionUseCases.containsException(tabId) { excluded ->
-                    activity?.runOnUiThread { isChecked = !excluded }
+                    activity?.runOnUiThread {
+                        isChecked = !excluded
+                        host?.let { engine.setSiteProtectionOverride(it, !excluded) }
+                    }
                 }
             }
             setOnPreferenceChangeListener { _, value ->
+                val enabled = value as Boolean
+                host?.let { engine.setSiteProtectionOverride(it, enabled) }
                 selectedTabId?.let { tabId ->
-                    if (value as Boolean) trackingProtectionUseCases.removeException(tabId)
+                    if (enabled) trackingProtectionUseCases.removeException(tabId)
                     else trackingProtectionUseCases.addException(tabId)
                 }
+                reloadSelectedTab()
                 true
             }
         })
+
+        if (host != null) {
+            screen.addPreference(Preference(requireContext()).apply {
+                key = SITE_FILTER_LISTS_KEY
+                title = getString(R.string.native_protection_site_filter_lists)
+                summary = siteFilterSummary(host)
+                setOnPreferenceClickListener {
+                    showSiteFilterListsDialog(host)
+                    true
+                }
+            })
+        }
 
         screen.addPreference(Preference(requireContext()).apply {
             key = FILTER_LISTS_KEY
@@ -78,6 +97,7 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             summary = refreshSummary()
             setOnPreferenceClickListener {
                 summary = getString(R.string.native_protection_updating)
+                engine.refreshCosmeticFilters()
                 engine.refreshFilters { success ->
                     activity?.runOnUiThread {
                         summary = refreshSummary(success)
@@ -109,6 +129,39 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
         preferenceScreen = screen
     }
 
+    private fun showSiteFilterListsDialog(host: String) {
+        val global = engine.selectedListIds()
+        val current = engine.siteListOverride(host)
+        val selected = (current ?: global).toMutableSet()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.native_protection_site_filter_lists)
+            .setMultiChoiceItems(
+                NativeProtectionEngine.FILTER_LISTS.map { it.title }.toTypedArray(),
+                NativeProtectionEngine.FILTER_LISTS.map { selected.contains(it.id) }.toBooleanArray(),
+            ) { _, which, checked ->
+                if (checked) selected += NativeProtectionEngine.FILTER_LISTS[which].id
+                else selected -= NativeProtectionEngine.FILTER_LISTS[which].id
+            }
+            .setNeutralButton(R.string.native_protection_use_global) {
+                _, _ ->
+                engine.clearSiteListOverride(host)
+                findPreference<Preference>(SITE_FILTER_LISTS_KEY)?.summary = siteFilterSummary(host)
+                reloadSelectedTab()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                engine.setSiteListOverride(host, selected)
+                findPreference<Preference>(SITE_FILTER_LISTS_KEY)?.summary = siteFilterSummary(host)
+                reloadSelectedTab()
+            }
+            .show()
+    }
+
+    private fun siteFilterSummary(host: String): String =
+        engine.siteListOverride(host)?.let {
+            getString(R.string.native_protection_site_lists_selected, it.size)
+        } ?: getString(R.string.native_protection_site_lists_global)
+
     private fun showFilterListsDialog() {
         val lists = NativeProtectionEngine.FILTER_LISTS
         val selected = engine.selectedListIds().toMutableSet()
@@ -125,6 +178,7 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
                 engine.setSelectedListIds(selected)
                 findPreference<Preference>(FILTER_LISTS_KEY)?.summary =
                     getString(R.string.native_protection_lists_selected, selected.size)
+                reloadSelectedTab()
             }
             .show()
     }
@@ -149,6 +203,7 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 engine.setCustomFilters(editText.text.toString())
+                reloadSelectedTab()
             }
             .show()
     }
@@ -200,8 +255,15 @@ class NativeProtectionFragment : PreferenceFragmentCompat() {
     private fun formatRefreshTime(timestamp: Long): String =
         DateFormat.getTimeFormat(requireContext()).format(Date(timestamp))
 
+    private fun reloadSelectedTab() {
+        requireComponents.core.store.state.selectedTabId?.let { tabId ->
+            requireComponents.useCases.sessionUseCases.reload.invoke(tabId)
+        }
+    }
+
     companion object {
         private const val FILTER_LISTS_KEY = "sandfox_filter_lists"
+        private const val SITE_FILTER_LISTS_KEY = "sandfox_site_filter_lists"
         private const val UPDATE_KEY = "sandfox_filter_update"
     }
 }
