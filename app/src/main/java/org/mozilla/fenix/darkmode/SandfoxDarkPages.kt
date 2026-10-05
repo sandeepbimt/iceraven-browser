@@ -35,7 +35,10 @@ object SandfoxDarkPages {
         Theme.fromWire(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_THEME, Theme.DARK.wire))
 
     fun getSiteMode(context: Context, host: String): Mode? =
-        if (host.isBlank()) null else readSites(context).optString(host, null)?.let(Mode::fromWire)
+        if (host.isBlank()) null else {
+            val sites = readSites(context)
+            if (sites.has(host)) Mode.fromWire(sites.optString(host)) else null
+        }
 
     fun setMode(context: Context, runtime: GeckoRuntime, mode: Mode) {
         prefs(context).edit().putString(KEY_MODE, mode.wire).apply()
