@@ -57,9 +57,9 @@ async function fetchFilters() {
 }
 
 async function buildOrRestoreEngine() {
-  await init("./wasm/sandfox_adblock_wasm_bg.wasm");
-
-  const cached = await dbGet("dat");
+  const wasmReady = init("./wasm/sandfox_adblock_wasm_bg.wasm");
+  const cachedReady = dbGet("dat");
+  const [, cached] = await Promise.all([wasmReady, cachedReady]);
   if (cached instanceof ArrayBuffer && cached.byteLength > 0) {
     const candidate = new SandfoxAdblockEngine("");
     if (candidate.deserialize(new Uint8Array(cached))) {
