@@ -48,6 +48,7 @@ jobs:
           MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: none
         run: |
           set -e
+          ./mach python -m pip install --disable-pip-version-check --require-hashes -r build/zstandard_requirements.txt
           ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android"
           cat > .mozconfig <<'EOF'
           ac_add_options --enable-project=mobile/android
