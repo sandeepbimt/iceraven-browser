@@ -8,6 +8,7 @@ on:
       - sandfox/pwa-launch-performance
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
+      - sandfox/brave-engine-v1
 
 jobs:
   release-automation:
@@ -31,6 +32,36 @@ jobs:
 
       - name: Inspect memory
         run: free -h
+
+      - name: Checkout pinned Sandfox Gecko
+        run: |
+          set -e
+          git clone --depth 1 --no-tags --branch sandfox/brave-engine-v1-156 https://github.com/sandeepbimt/sandfox-gecko.git sandfox-gecko
+          test "$(git -C sandfox-gecko rev-parse HEAD)" = "3622715d26c40020e06904ba1e1c5dd681a3c7bc"
+
+      - name: Configure and build Sandfox GeckoView
+        working-directory: sandfox-gecko
+        env:
+          MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: none
+        run: |
+          set -e
+          ./mach python -m pip install --disable-pip-version-check --require-hashes -r build/zstandard_requirements.txt
+          ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android"
+          cat > .mozconfig <<'EOF'
+          ac_add_options --enable-project=mobile/android
+          ac_add_options --target=aarch64
+          ac_add_options --enable-optimize
+          ac_add_options --disable-debug
+          ac_add_options --disable-tests
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-aarch64-unknown-linux-android
+          EOF
+          ./mach build
+
+      - name: Configure local GeckoView substitution
+        run: |
+          printf '\ndependencySubstitutions.geckoviewTopsrcdir=%s\ndependencySubstitutions.geckoviewTopobjdir=%s\n' \
+            "$GITHUB_WORKSPACE/sandfox-gecko" \
+            "$GITHUB_WORKSPACE/sandfox-gecko/obj-aarch64-unknown-linux-android" >> local.properties
 
       - name: Create version name
         run: echo "VERSION_NAME=$(git describe --tags HEAD)" >> $GITHUB_ENV
