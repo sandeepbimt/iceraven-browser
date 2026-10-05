@@ -143,3 +143,7 @@ Please keep in mind that even though a feature you have in mind may seem like a 
     This Source Code Form is subject to the terms of the Mozilla Public
     License, v. 2.0. If a copy of the MPL was not distributed with this
     file, You can obtain one at http://mozilla.org/MPL/2.0/
+
+## SANDFOX Dark Pages V4
+
+The SANDFOX V4 branch contains the first no-custom-Gecko-build Dark Pages implementation: a global Off / Native Dark / Smart Dark policy, built-in themes, per-site policy storage, and versioned settings export/import. Smart Dark uses a first-party GeckoView WebExtension with document-start CSSOM rule transformation; it does not intercept web requests, suspend network activity, or rewrite media payloads. GeckoView's runtime preferred-color-scheme API supplies the global native-dark preference.
