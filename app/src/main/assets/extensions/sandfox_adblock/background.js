@@ -92,3 +92,20 @@ browser.webRequest.onBeforeRequest.addListener(
 );
 
 buildOrRestoreEngine().catch(error => console.error("Sandfox adblock initialization failed", error));
+
+browser.runtime.onMessage.addListener(async message => {
+  if (!engine) return [];
+  try {
+    if (message?.type === "cosmetic") {
+      return JSON.parse(engine.cosmetic(message.url));
+    }
+    if (message?.type === "dynamic-cosmetic") {
+      return JSON.parse(engine.dynamicCosmetic(
+        message.classes || [],
+        message.ids || [],
+        message.exceptions || []
+      ));
+    }
+  } catch (_) {}
+  return [];
+});
