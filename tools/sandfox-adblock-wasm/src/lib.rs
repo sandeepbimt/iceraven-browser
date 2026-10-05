@@ -37,7 +37,7 @@ impl SandfoxAdblockEngine {
             Ok(request) => request,
             Err(_) => return false,
         };
-        self.engine.check_network_request(&request).matched
+        self.engine.check_network_request(&request).should_block()
     }
 
     #[wasm_bindgen(js_name = cosmetic)]
@@ -73,7 +73,7 @@ fn build_engine(filter_text: &str) -> Engine {
     let mut filter_set = FilterSet::new(false);
     if !filter_text.is_empty() {
         let rules: Vec<String> = filter_text.lines().map(str::to_owned).collect();
-        filter_set.add_filters(&rules, ParseOptions::default());
+        filter_set.add_filter_list(&rules, ParseOptions::default());
     }
     Engine::new_with_filter_set(filter_set)
 }
