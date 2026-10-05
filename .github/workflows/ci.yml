@@ -44,6 +44,8 @@ jobs:
 
       - name: Configure and build Sandfox GeckoView
         working-directory: sandfox-gecko
+        env:
+          MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: none
         run: |
           set -e
           ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android"
