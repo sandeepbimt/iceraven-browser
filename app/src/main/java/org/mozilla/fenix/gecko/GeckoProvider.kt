@@ -25,6 +25,15 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 
 object GeckoProvider {
+    private const val SANDFOX_ADBLOCK_EXTENSION_URI =
+        "resource://android/assets/extensions/sandfox_adblock/"
+    private const val SANDFOX_ADBLOCK_EXTENSION_ID =
+        "sandfox-adblock@sandfox.browser"
+    private const val UBLOCK_ORIGIN_EXTENSION_URI =
+        "resource://android/assets/extensions/ublock_origin/"
+    private const val UBLOCK_ORIGIN_EXTENSION_ID =
+        "uBlock0@raymondhill.net"
+
     private var runtime: GeckoRuntime? = null
 
     @Synchronized
@@ -57,6 +66,26 @@ object GeckoProvider {
         }
 
         val geckoRuntime = GeckoRuntime.create(context, runtimeSettings)
+
+        geckoRuntime.getWebExtensionController()
+            .ensureBuiltIn(
+                SANDFOX_ADBLOCK_EXTENSION_URI,
+                SANDFOX_ADBLOCK_EXTENSION_ID,
+            )
+            .accept(
+                {},
+                { error -> context.components.analytics.crashReporter.submitCaughtException(error) },
+            )
+
+        geckoRuntime.getWebExtensionController()
+            .ensureBuiltIn(
+                UBLOCK_ORIGIN_EXTENSION_URI,
+                UBLOCK_ORIGIN_EXTENSION_ID,
+            )
+            .accept(
+                {},
+                { error -> context.components.analytics.crashReporter.submitCaughtException(error) },
+            )
 
         geckoRuntime.autocompleteStorageDelegate =
             GeckoAutocompleteStorageDelegate(
