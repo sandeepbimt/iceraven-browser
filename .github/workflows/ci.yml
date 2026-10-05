@@ -8,6 +8,7 @@ on:
       - sandfox/pwa-launch-performance
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
+      - sandfox/brave-engine-v1-no-suspension
 
 jobs:
   release-automation:
@@ -25,6 +26,19 @@ jobs:
         with:
           java-version: 17
           distribution: temurin
+
+      - name: Install Rust for Sandfox adblock WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Build Sandfox Brave adblock WASM
+        run: |
+          rm -rf app/src/main/assets/extensions/sandfox_adblock/wasm
+          wasm-pack build tools/sandfox-adblock-wasm             --target web             --release             --out-dir ../../app/src/main/assets/extensions/sandfox_adblock/wasm
 
       - name: Install Android SDK with pieces Gradle skips
         run: ./automation/iceraven/install-sdk.sh
@@ -53,7 +67,7 @@ jobs:
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=4g -Xms1g -Xmx7g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dev/stderr"
         run: |
-          /usr/bin/time -v ./gradlew app:assembleForkRelease -PversionName=\${{ env.VERSION_NAME }} --stacktrace --no-daemon
+          /usr/bin/time -v ./gradlew app:assembleForkRelease -PversionName="$VERSION_NAME" --stacktrace --no-daemon
 
       - name: Debug
         run: |
@@ -65,27 +79,13 @@ jobs:
           KEY_PASSWORD: iceraven-test
         run: |
           set -e
-          keytool -genkeypair \
-            -keystore /tmp/iceraven-test.jks \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -alias iceraven-test \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Iceraven Test"
+          keytool -genkeypair             -keystore /tmp/iceraven-test.jks             -storepass "$KEYSTORE_PASSWORD"             -keypass "$KEY_PASSWORD"             -alias iceraven-test             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=Iceraven Test"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -x "$APKSIGNER"
           echo "Using $APKSIGNER"
           for apk in gradle/build/app/outputs/apk/forkRelease/*-unsigned.apk; do
             signed="${apk%-unsigned.apk}.apk"
-            "$APKSIGNER" sign \
-              --ks /tmp/iceraven-test.jks \
-              --ks-key-alias iceraven-test \
-              --ks-pass pass:"$KEYSTORE_PASSWORD" \
-              --key-pass pass:"$KEY_PASSWORD" \
-              --out "$signed" \
-              "$apk"
+            "$APKSIGNER" sign               --ks /tmp/iceraven-test.jks               --ks-key-alias iceraven-test               --ks-pass pass:"$KEYSTORE_PASSWORD"               --key-pass pass:"$KEY_PASSWORD"               --out "$signed"               "$apk"
           done
           "$APKSIGNER" verify --verbose gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
 
@@ -98,4 +98,3 @@ jobs:
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
           name: iceraven-standalone-arm64-v8a
-
