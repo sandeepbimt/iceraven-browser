@@ -158,7 +158,7 @@ open class ExternalAppBrowserActivity : HomeActivity() {
 
         val icon =
             ImageView(this).apply {
-                taskDescription.icon?.let(::setImageBitmap) ?: setImageResource(R.drawable.ic_splash_logo)
+                setImageResource(R.drawable.ic_splash_logo)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 alpha = 0f
                 scaleX = 0.92f
