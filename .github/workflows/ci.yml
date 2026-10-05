@@ -8,6 +8,7 @@ on:
       - sandfox/pwa-launch-performance
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
+      - sandfox/adblock-ublock-assist-v1
 
 jobs:
   release-automation:
@@ -25,6 +26,27 @@ jobs:
         with:
           java-version: 17
           distribution: temurin
+
+      - name: Setup Node for pinned uBlock build
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install Rust for Sandfox adblock WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Build Sandfox Brave adblock WASM
+        run: |
+          rm -rf app/src/main/assets/extensions/sandfox_adblock/wasm
+          wasm-pack build tools/sandfox-adblock-wasm             --target web             --release             --out-dir ../../app/src/main/assets/extensions/sandfox_adblock/wasm
+
+      - name: Build pinned uBlock Origin content engine
+        run: bash tools/sandfox-ublock/build.sh
 
       - name: Install Android SDK with pieces Gradle skips
         run: ./automation/iceraven/install-sdk.sh
