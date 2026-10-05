@@ -53,6 +53,7 @@ new = """const webRequest = {
     // a second network observer or suspending Gecko network activity.
     start: (( ) => {
         vAPI.net = new vAPI.Net();
+        vAPI.net.setSuspendableListener(() => {});
         return ( ) => {};
     })(),
 """
