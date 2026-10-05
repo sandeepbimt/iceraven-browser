@@ -121,6 +121,8 @@ import org.mozilla.fenix.browser.desktopmode.DesktopModeMiddleware
 import org.mozilla.fenix.components.search.ApplicationSearchMiddleware
 import org.mozilla.fenix.components.search.SearchMigration
 import org.mozilla.fenix.components.search.SearchWidgetMiddleware
+import org.mozilla.fenix.darkmode.SandfoxDarkEngine
+import org.mozilla.fenix.darkmode.SandfoxDarkPages
 import org.mozilla.fenix.downloads.DownloadService
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isLargeWindow
@@ -674,16 +676,21 @@ class Core(
     val trackingProtectionPolicyFactory =
         TrackingProtectionPolicyFactory(context.components.settings, context.resources)
 
-    /** Sets Preferred Color scheme based on Dark/Light Theme Settings or Current Configuration */
+    /** Uses the explicit SANDFOX Dark Pages policy when enabled. */
     fun getPreferredColorScheme(): PreferredColorScheme {
-        val inDark =
-            (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-        return when {
-            context.components.settings.shouldUseDarkTheme -> PreferredColorScheme.Dark
-            context.components.settings.shouldUseLightTheme -> PreferredColorScheme.Light
-            inDark -> PreferredColorScheme.Dark
-            else -> PreferredColorScheme.Light
+        return when (SandfoxDarkPages.getMode(context)) {
+            SandfoxDarkPages.Mode.NATIVE, SandfoxDarkPages.Mode.SMART -> PreferredColorScheme.Dark
+            SandfoxDarkPages.Mode.OFF -> {
+                val inDark =
+                    (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                        Configuration.UI_MODE_NIGHT_YES
+                when {
+                    context.components.settings.shouldUseDarkTheme -> PreferredColorScheme.Dark
+                    context.components.settings.shouldUseLightTheme -> PreferredColorScheme.Light
+                    inDark -> PreferredColorScheme.Dark
+                    else -> PreferredColorScheme.Light
+                }
+            }
         }
     }
 

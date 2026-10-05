@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_menu_dark_pages">Dark Pages</string>
+    <string name="dark_pages_title">SANDFOX Dark Pages</string>
+    <string name="dark_pages_mode_off">Off</string>
+    <string name="dark_pages_mode_native">Native Dark</string>
+    <string name="dark_pages_mode_smart">Smart Dark</string>
+    <string name="dark_pages_theme">Theme</string>
+    <string name="dark_pages_site_mode">This site</string>
+    <string name="dark_pages_follow_global">Follow Global</string>
+    <string name="dark_pages_export">Export settings</string>
+    <string name="dark_pages_import">Import settings</string>
+    <string name="dark_pages_import_failed">Invalid SANDFOX settings file</string>
+</resources>

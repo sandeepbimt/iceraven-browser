@@ -81,6 +81,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.appstate.SupportedMenuNotifications
 import org.mozilla.fenix.components.components
+import org.mozilla.fenix.darkmode.SandfoxDarkPages
 import org.mozilla.fenix.components.menu.compose.Addons
 import org.mozilla.fenix.components.menu.compose.CustomTabAddons
 import org.mozilla.fenix.components.menu.compose.CustomTabMenu
@@ -154,6 +155,26 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
     private val browserStore by lazy { requireComponents.core.store }
     private lateinit var menuStore: MenuStore
     private var pendingStandaloneIconSession: SessionState? = null
+
+    private val darkPagesExportLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            if (uri != null) runCatching {
+                requireContext().contentResolver.openOutputStream(uri)?.use {
+                    it.write(SandfoxDarkPages.exportJson(requireContext()).toByteArray())
+                }
+            }
+        }
+
+    private val darkPagesImportLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) runCatching {
+                requireContext().contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()?.let { json ->
+                if (!SandfoxDarkPages.importJson(requireContext(), requireComponents.core.geckoRuntime, json)) {
+                    Toast.makeText(requireContext(), R.string.dark_pages_import_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
 
     private val standaloneIconPicker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -594,6 +615,9 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                         onSettingsButtonClick = {
                                             menuStore.dispatch(MenuAction.Navigate.Settings)
                                         },
+                                        onDarkPagesClick = {
+                                            showDarkPagesDialog(selectedTab?.content?.url)
+                                        },
                                         onCustomizeHomepageButtonClick = {
                                             menuStore.dispatch(MenuAction.Navigate.CustomizeHomepage)
                                         },
@@ -879,6 +903,54 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                 }
             }
         }
+
+    private fun showDarkPagesDialog(url: String?) {
+        val context = requireContext()
+        val host = runCatching { android.net.Uri.parse(url ?: "").host?.lowercase().orEmpty() }.getOrDefault("")
+        val runtime = requireComponents.core.geckoRuntime
+        val modes = SandfoxDarkPages.Mode.entries
+        val themes = SandfoxDarkPages.Theme.entries
+        androidx.appcompat.app.AlertDialog.Builder(context)
+            .setTitle(R.string.dark_pages_title)
+            .setSingleChoiceItems(
+                arrayOf(getString(R.string.dark_pages_mode_off), getString(R.string.dark_pages_mode_native), getString(R.string.dark_pages_mode_smart)),
+                modes.indexOf(SandfoxDarkPages.getMode(context)),
+            ) { dialog, which ->
+                SandfoxDarkPages.setMode(context, runtime, modes[which])
+                dialog.dismiss()
+            }
+            .setNeutralButton(R.string.dark_pages_theme) { _, _ ->
+                androidx.appcompat.app.AlertDialog.Builder(context)
+                    .setTitle(R.string.dark_pages_theme)
+                    .setSingleChoiceItems(themes.map { it.title }.toTypedArray(), themes.indexOf(SandfoxDarkPages.getTheme(context))) { dialog, which ->
+                        SandfoxDarkPages.setTheme(context, themes[which])
+                        dialog.dismiss()
+                    }
+                    .setPositiveButton(R.string.dark_pages_export) { _, _ -> darkPagesExportLauncher.launch("sandfox-settings.json") }
+                    .setNegativeButton(R.string.dark_pages_import) { _, _ -> darkPagesImportLauncher.launch(arrayOf("application/json", "text/plain")) }
+                    .show()
+            }
+            .setPositiveButton(R.string.dark_pages_site_mode) { _, _ -> if (host.isNotEmpty()) showDarkPagesSiteDialog(host) }
+            .setNegativeButton(R.string.dark_pages_import) { _, _ -> darkPagesImportLauncher.launch(arrayOf("application/json", "text/plain")) }
+            .show()
+    }
+
+    private fun showDarkPagesSiteDialog(host: String) {
+        val context = requireContext()
+        val current = SandfoxDarkPages.getSiteMode(context, host)
+        val values = arrayOf<SandfoxDarkPages.Mode?>(null, SandfoxDarkPages.Mode.OFF, SandfoxDarkPages.Mode.NATIVE, SandfoxDarkPages.Mode.SMART)
+        androidx.appcompat.app.AlertDialog.Builder(context)
+            .setTitle(getString(R.string.dark_pages_site_mode) + " — " + host)
+            .setSingleChoiceItems(
+                arrayOf(getString(R.string.dark_pages_follow_global), getString(R.string.dark_pages_mode_off), getString(R.string.dark_pages_mode_native), getString(R.string.dark_pages_mode_smart)),
+                values.indexOfFirst { it == current },
+            ) { dialog, which ->
+                SandfoxDarkPages.setSiteMode(context, host, values[which])
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)

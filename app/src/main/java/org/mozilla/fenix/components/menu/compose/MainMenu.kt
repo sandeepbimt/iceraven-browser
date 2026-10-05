@@ -152,6 +152,7 @@ fun MainMenu(
     onCustomizeReaderViewMenuClick: () -> Unit,
     onMozillaAccountButtonClick: () -> Unit,
     onSettingsButtonClick: () -> Unit,
+    onDarkPagesClick: () -> Unit,
     onCustomizeHomepageButtonClick: () -> Unit,
     onBookmarkPageMenuClick: () -> Unit,
     onEditBookmarkButtonClick: () -> Unit,
@@ -327,6 +328,12 @@ fun MainMenu(
                     onClick = onCustomizeHomepageButtonClick,
                 )
             }
+
+            MenuItem(
+                label = stringResource(id = R.string.browser_menu_dark_pages),
+                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_settings_24),
+                onClick = onDarkPagesClick,
+            )
 
             MenuItem(
                 label = stringResource(id = R.string.browser_menu_settings),
