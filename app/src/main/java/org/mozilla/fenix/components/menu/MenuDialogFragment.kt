@@ -1099,3 +1099,162 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
             browserStore = browserStore,
             navController = findNavController(),
             openToBrowser = ::openToBrowser,
+            sessionUseCases = components.useCases.sessionUseCases,
+            webAppUseCases = webAppUseCases,
+            shareUseCases = components.useCases.shareUseCases,
+            settings = settings,
+            onDismiss = {
+                withContext(Dispatchers.Main) {
+                    this@MenuDialogFragment.dismiss()
+                }
+            },
+            onInstallStandaloneWebApp = ::showStandaloneWebAppIconDialog,
+            scope = coroutineScope,
+            webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
+        )
+    }
+
+    private fun showStandaloneWebAppIconDialog(session: SessionState) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.standalone_web_app_icon_title)
+            .setMessage(R.string.standalone_web_app_icon_message)
+            .setNegativeButton(R.string.standalone_web_app_cancel, null)
+            .setNeutralButton(R.string.standalone_web_app_use_default_icon) { _, _ ->
+                StandaloneWebAppShortcutInstaller.requestPinShortcut(
+                    context = requireContext(),
+                    session = session,
+                )
+                dismiss()
+            }
+            .setPositiveButton(R.string.standalone_web_app_choose_icon) { _, _ ->
+                pendingStandaloneIconSession = session
+                standaloneIconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp"))
+            }
+            .show()
+    }
+
+    private fun createMenuTelemetryMiddleware(): MenuTelemetryMiddleware {
+        return MenuTelemetryMiddleware(accessPoint = args.accesspoint)
+    }
+
+    private fun handleIPProtectionClick(
+        ipProtectionMenuState: IPProtectionMenuState,
+        components: Components,
+        store: MenuStore,
+    ) {
+        when (ipProtectionMenuState.status) {
+            IPProtectionMenuStatus.Disabled -> {
+                Vpn.menuTurnedOn.record()
+                components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+            }
+
+            IPProtectionMenuStatus.Enabled -> {
+                Vpn.menuTurnedOff.record()
+                components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+            }
+
+            IPProtectionMenuStatus.AuthRequired -> {
+                // If authorization is required, the user clicked the "Try it" button.
+                Vpn.menuTryItTapped.record(NoExtras())
+                store.dispatch(MenuAction.Navigate.IPProtectionSettings)
+            }
+
+            IPProtectionMenuStatus.Activating,
+            IPProtectionMenuStatus.DataLimitReached,
+            IPProtectionMenuStatus.ConnectionError -> {
+                components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+            }
+        }
+    }
+
+    private fun getExtensionsMenuItemDescription(
+        isExtensionsProcessDisabled: Boolean,
+        isAllWebExtensionsDisabled: Boolean,
+        availableAddons: List<Addon>,
+        browserWebExtensionMenuItems: List<WebExtensionMenuItem>,
+    ): String? {
+        val isBrowserOrExternal =
+            args.accesspoint == MenuAccessPoint.Browser || args.accesspoint == MenuAccessPoint.External
+
+        return when {
+            args.accesspoint == MenuAccessPoint.Home -> null
+
+            isExtensionsProcessDisabled -> {
+                requireContext().getString(R.string.browser_menu_extensions_disabled_description)
+            }
+
+            isBrowserOrExternal && browserWebExtensionMenuItems.isNotEmpty() -> {
+                browserWebExtensionMenuItems.joinToString(separator = ", ") { it.label }
+            }
+
+            isAllWebExtensionsDisabled -> {
+                requireContext().getString(R.string.browser_menu_no_extensions_installed_description)
+            }
+
+            isBrowserOrExternal && availableAddons.isEmpty() -> {
+                requireContext().getString(R.string.browser_menu_try_a_recommended_extension_description)
+            }
+
+            else -> null
+        }
+    }
+
+    private fun openToBrowser(params: BrowserNavigationParams) = runIfFragmentIsAttached {
+        val url =
+            params.url
+                ?: params.sumoTopic?.let {
+                    SupportUtils.getSumoURLForTopic(
+                        context = requireContext(),
+                        topic = it,
+                    )
+                }
+
+        url?.let {
+            findNavController().openToBrowser()
+            requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+                searchTermOrURL = url,
+                newTab = true,
+            )
+        }
+    }
+
+    private fun sendPendingIntentWithUrl(intent: PendingIntent, url: String?) = runIfFragmentIsAttached {
+        url?.let { url ->
+            intent.send(
+                requireContext(),
+                0,
+                Intent(null, url.toUri()),
+            )
+        }
+    }
+
+    private fun calculateMenuSheetWidth(): Int {
+        val isLandscape = requireContext().isLandscape()
+        val screenWidthPx = requireContext().resources.configuration.screenWidthDp.dpToPx(resources.displayMetrics)
+        val totalHorizontalPadding = 2 * pixelSizeFor(R.dimen.browser_menu_padding)
+        val minScreenWidth = pixelSizeFor(R.dimen.browser_menu_max_width) + totalHorizontalPadding
+
+        // We only want to restrict the width of the menu if the device is in landscape mode AND the
+        // device's screen width is smaller than the menu's max width and total horizontal padding combined.
+        // Otherwise, the menu being at max width would still leave sufficient padding on each side in landscape mode.
+        return if (isLandscape && screenWidthPx < minScreenWidth) {
+            screenWidthPx - totalHorizontalPadding
+        } else {
+            pixelSizeFor(R.dimen.browser_menu_max_width)
+        }
+    }
+
+    private fun calculateMenuSheetHeight(): Int {
+        val bottomSheet = dialog?.findViewById<View?>(materialR.id.design_bottom_sheet)
+        val topBarHeight = bottomSheet?.getWindowInsets()?.top() ?: 0
+
+        val orientationMaxHeight =
+            if (requireContext().isLandscape()) {
+                resources.displayMetrics.heightPixels
+            } else {
+                resources.displayMetrics.heightPixels - EXPANDED_OFFSET.dpToPx(resources.displayMetrics)
+            }
+
+        return orientationMaxHeight - topBarHeight
+    }
+}
