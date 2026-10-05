@@ -9,6 +9,7 @@ on:
       - sandfox/pwa-prewarm
       - sandfox/reader-typography-v1
       - sandfox/adblock-ublock-assist-v1
+      - sandfox/dark-pages-v4-final
 
 jobs:
   release-automation:
@@ -115,4 +116,3 @@ jobs:
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
           name: iceraven-standalone-arm64-v8a
-
