@@ -48,7 +48,7 @@ impl SandfoxAdblockEngine {
             exceptions: resources.exceptions.into_iter().collect(),
             generichide: resources.generichide,
         };
-        serde_json::to_string(&result).unwrap_or_else(|_| "{"hide_selectors":[],"exceptions":[],"generichide":false}".into())
+        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"hide_selectors":[],"exceptions":[],"generichide":false}"#.into())
     }
 
     #[wasm_bindgen(js_name = dynamicCosmetic)]
