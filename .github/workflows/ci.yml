@@ -27,11 +27,6 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - name: Setup Node for pinned uBlock build
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
       - name: Install Rust for Sandfox adblock WASM
         uses: dtolnay/rust-toolchain@stable
         with:
