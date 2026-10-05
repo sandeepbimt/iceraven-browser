@@ -5,6 +5,7 @@
 package org.mozilla.fenix.gecko
 
 import android.content.Context
+import java.io.File
 import androidx.annotation.VisibleForTesting
 import mozilla.components.browser.engine.gecko.autofill.GeckoAutocompleteStorageDelegate
 import mozilla.components.browser.engine.gecko.crash.GeckoCrashPullDelegate
@@ -18,6 +19,7 @@ import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.service.sync.autofill.GeckoCreditCardsAddressesStorageDelegate
 import mozilla.components.service.sync.logins.GeckoLoginStorageDelegate
 import org.mozilla.fenix.Config
+import org.mozilla.fenix.components.nativeprotection.NativeProtectionEngine
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.nimbus.FxNimbus
@@ -47,6 +49,7 @@ object GeckoProvider {
         loginStorage: Lazy<LoginsStorage>,
         policy: TrackingProtectionPolicy,
     ): GeckoRuntime {
+        NativeProtectionEngine.get(context).prepareGeckoStartupConfig()
         val runtimeSettings = createRuntimeSettings(context, policy)
 
         val settings = context.components.settings
@@ -127,6 +130,9 @@ object GeckoProvider {
                 .isolatedProcessEnabled(context.components.settings.isIsolatedProcessEnabled)
                 .appZygoteProcessEnabled(context.components.settings.isAppZygoteEnabled)
                 .fissionEnabled(context.components.settings.isFissionEnabled)
+                .configFilePath(
+                    File(context.filesDir, "sandfox-geckoview-config.yaml").absolutePath
+                )
 
         return builder.build()
     }
