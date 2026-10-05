@@ -3,6 +3,7 @@ package org.mozilla.fenix.darkmode
 import android.content.Context
 import android.util.Log
 import org.json.JSONObject
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.WebExtension
 
@@ -19,6 +20,17 @@ object SandfoxDarkEngine {
         runtime.getWebExtensionController().ensureBuiltIn(LOCATION, ID).accept(
             { extension ->
                 extension?.setMessageDelegate(object : WebExtension.MessageDelegate {
+                    override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any> {
+                        return if (nativeApp == NATIVE_APP) {
+                            GeckoResult.fromValue(JSONObject().apply {
+                                put("type", "sandfox-config")
+                                put("config", SandfoxDarkPages.configJson(appContext ?: context))
+                            })
+                        } else {
+                            GeckoResult.fromValue(JSONObject())
+                        }
+                    }
+
                     override fun onConnect(port: WebExtension.Port) {
                         if (port.name != NATIVE_APP) return
                         nativePort = port
