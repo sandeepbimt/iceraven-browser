@@ -74,7 +74,7 @@ object GeckoProvider {
             )
             .accept(
                 {},
-                { error -> context.components.analytics.crashReporter.submitCaughtException(error) },
+                { error -> error?.let(context.components.analytics.crashReporter::submitCaughtException) },
             )
 
         geckoRuntime.getWebExtensionController()
@@ -84,7 +84,7 @@ object GeckoProvider {
             )
             .accept(
                 {},
-                { error -> context.components.analytics.crashReporter.submitCaughtException(error) },
+                { error -> error?.let(context.components.analytics.crashReporter::submitCaughtException) },
             )
 
         geckoRuntime.autocompleteStorageDelegate =
