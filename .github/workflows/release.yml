@@ -2,6 +2,9 @@ name: Release
 
 on:
   create:
+  push:
+    branches:
+      - sandfox/dark-pages-v4-apk2
 
 jobs:
   release-automation:
@@ -49,14 +52,46 @@ jobs:
         run: |
           /usr/bin/time -v ./gradlew app:assembleForkRelease -PversionName=${{ env.VERSION_NAME }} --stacktrace --no-daemon
 
+      - name: Prepare CI signing key
+        env:
+          DEBUG_SIGNING_KEY: ${{ secrets.DEBUG_SIGNING_KEY }}
+          DEBUG_ALIAS: ${{ secrets.DEBUG_ALIAS }}
+          DEBUG_KEY_STORE_PASSWORD: ${{ secrets.DEBUG_KEY_STORE_PASSWORD }}
+          DEBUG_KEY_PASSWORD: ${{ secrets.DEBUG_KEY_PASSWORD }}
+        run: |
+          if [ -n "$DEBUG_SIGNING_KEY" ]; then
+            echo "ANDROID_SIGNING_KEY=$DEBUG_SIGNING_KEY" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$DEBUG_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$DEBUG_KEY_STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$DEBUG_KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Release signing secrets are not configured; generating a temporary CI signing key for this test build."
+            KEYSTORE="$RUNNER_TEMP/sandfox-ci.jks"
+            STOREPASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -keystore "$KEYSTORE" -storetype PKCS12 -alias sandfox-ci -keyalg RSA -keysize 2048 -validity 10000 -storepass "$STOREPASS" -keypass "$STOREPASS" -dname "CN=Sandfox CI,O=Sandfox"
+            SIGNING_KEY="$(base64 -w 0 "$KEYSTORE")"
+            echo "ANDROID_SIGNING_KEY=$SIGNING_KEY" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=sandfox-ci" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$STOREPASS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$STOREPASS" >> "$GITHUB_ENV"
+          fi
+
       - name: Create signed APKs
         uses: akliuxingyuan/sign-android-release@v2.0.1
         with:
           releaseDir: gradle/build/app/outputs/apk/forkRelease/
-          signingKey: ${{ secrets.DEBUG_SIGNING_KEY }}
-          keyAlias: ${{ secrets.DEBUG_ALIAS }}
-          keyStorePassword: ${{ secrets.DEBUG_KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.DEBUG_KEY_PASSWORD }}
+          signingKey: ${{ env.ANDROID_SIGNING_KEY }}
+          keyAlias: ${{ env.ANDROID_KEY_ALIAS }}
+          keyStorePassword: ${{ env.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword: ${{ env.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload signed APKs for branch builds
+        if: github.event_name == 'push' || github.event.ref_type == 'branch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandfox-v4-signed-apks
+          path: gradle/build/app/outputs/apk/forkRelease/*.apk
+          if-no-files-found: error
 
       - name: Create changelog
         if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
