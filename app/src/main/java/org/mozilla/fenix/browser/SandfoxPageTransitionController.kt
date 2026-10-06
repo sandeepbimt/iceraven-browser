@@ -47,7 +47,6 @@ internal class SandfoxPageTransitionController(
     private var session: EngineSession? = null
     private var transitionView: ImageView? = null
     private var sourceHandoffView: ImageView? = null
-    private var pwaSplashView: ImageView? = null
     private var transitionAnimator: ValueAnimator? = null
 
     private var generation = 0L
@@ -63,6 +62,10 @@ internal class SandfoxPageTransitionController(
     private var firstFrameShownAt = 0L
     private var sourceHandoffPending = false
     private var preserveCandidateOnNextBind = false
+    private var viewportCheckPending = false
+    private var viewportStableSamples = 0
+    private var lastViewportSignature: IntArray? = null
+    private var firstViewportFrameAt = 0L
     private var safetyTimeout: Runnable? = null
 
     private val observer = object : EngineSession.Observer {
@@ -160,7 +163,6 @@ internal class SandfoxPageTransitionController(
 
         resetNavigationState()
         directPwaTransition = true
-        showPwaSplash(splashColor)
 
         val currentGeneration = generation
         scheduleSafetyTimeout(currentGeneration, PWA_SAFETY_TIMEOUT_MS)
@@ -235,38 +237,12 @@ internal class SandfoxPageTransitionController(
             scaleType = ImageView.ScaleType.FIT_XY
             alpha = 1f
         }
-        container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        container.addView(
+            image,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
         sourceHandoffView = image
-        image.animate().alpha(0f).setDuration(SOURCE_HANDOFF_DURATION_MS)
-            .setInterpolator(DecelerateInterpolator()).withEndAction {
-                if (transitionGeneration == generation) {
-                    sourceHandoffView = null
-                    (image.parent as? ViewGroup)?.removeView(image)
-                    image.setImageDrawable(null)
-                }
-            }.start()
-    }
-
-    private fun showPwaSplash(splashColor: Int?) {
-        val image = ImageView(container.context).apply {
-            setBackgroundColor(splashColor ?: Color.rgb(32, 32, 32))
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            alpha = 1f
-        }
-        container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        pwaSplashView = image
-        applyBlur(image, PWA_SPLASH_BLUR)
-    }
-
-    private fun dismissPwaSplash() {
-        val splash = pwaSplashView ?: return
-        splash.animate().alpha(0f).setDuration(PWA_SPLASH_TO_PAGE_MS)
-            .setInterpolator(DecelerateInterpolator()).withEndAction {
-                if (pwaSplashView === splash) {
-                    pwaSplashView = null
-                    (splash.parent as? ViewGroup)?.removeView(splash)
-                }
-            }.start()
     }
 
     private fun maybeStartDestinationCover() {
@@ -297,9 +273,12 @@ internal class SandfoxPageTransitionController(
                 if (bitmap == null) return@post
 
                 showBlurredDestinationFrame(bitmap)
-                if (directPwaTransition) dismissPwaSplash()
                 firstFrameShown = true
                 firstFrameShownAt = SystemClock.uptimeMillis()
+                firstViewportFrameAt = firstFrameShownAt
+                lastViewportSignature = viewportSignature(bitmap)
+                viewportStableSamples = 0
+                scheduleViewportReadinessCheck(transitionGeneration)
                 maybeRevealDestination()
             }
         }
@@ -314,8 +293,7 @@ internal class SandfoxPageTransitionController(
         if (revealStarted || (!navigationCandidate && !directPwaTransition)) return
         if (!firstPaintSeen || !firstFrameShown) return
 
-        val sufficientlyLoaded = loadProgress >= REVEAL_PROGRESS || !lastLoading
-        if (!sufficientlyLoaded) return
+        if (!viewportReady()) return
 
         val elapsed = SystemClock.uptimeMillis() - firstFrameShownAt
         val remainingMinimumDisplay = MIN_BLUR_DISPLAY_MS - elapsed
@@ -330,7 +308,100 @@ internal class SandfoxPageTransitionController(
         revealDestination(generation)
     }
 
-    private fun revealDestination(transitionGeneration: Long) {
+    private fun scheduleViewportReadinessCheck(transitionGeneration: Long) {
+        if (viewportCheckPending) return
+        viewportCheckPending = true
+
+        mainHandler.postDelayed(
+            {
+                viewportCheckPending = false
+                if (transitionGeneration != generation || !firstFrameShown) return@postDelayed
+
+                engineView.captureThumbnail { bitmap ->
+                    if (transitionGeneration != generation) return@captureThumbnail
+
+                    container.post {
+                        if (
+                            transitionGeneration != generation ||
+                            !firstFrameShown ||
+                            revealStarted
+                        ) {
+                            return@post
+                        }
+
+                        if (bitmap == null) {
+                            scheduleViewportReadinessCheck(transitionGeneration)
+                            return@post
+                        }
+
+                        val signature = viewportSignature(bitmap)
+                        val previous = lastViewportSignature
+                        val difference =
+                            if (previous == null) {
+                                Float.MAX_VALUE
+                            } else {
+                                viewportDifference(previous, signature)
+                            }
+
+                        lastViewportSignature = signature
+
+                        val enoughSettleTime =
+                            SystemClock.uptimeMillis() - firstViewportFrameAt >=
+                                MIN_VIEWPORT_SETTLE_MS
+
+                        if (enoughSettleTime && difference <= VIEWPORT_STABILITY_THRESHOLD) {
+                            viewportStableSamples++
+                        } else {
+                            viewportStableSamples = 0
+                        }
+
+                        if (viewportStableSamples >= VIEWPORT_STABLE_REQUIRED_SAMPLES) {
+                            maybeRevealDestination()
+                        } else {
+                            scheduleViewportReadinessCheck(transitionGeneration)
+                        }
+                    }
+                }
+            },
+            VIEWPORT_SAMPLE_INTERVAL_MS,
+        )
+    }
+
+    private fun viewportReady(): Boolean =
+        viewportStableSamples >= VIEWPORT_STABLE_REQUIRED_SAMPLES
+
+    private fun viewportSignature(bitmap: Bitmap): IntArray {
+        val columns = VIEWPORT_SIGNATURE_COLUMNS
+        val rows = VIEWPORT_SIGNATURE_ROWS
+        val result = IntArray(columns * rows)
+        val width = bitmap.width
+        val height = bitmap.height
+
+        for (row in 0 until rows) {
+            val y = ((row + 0.5f) * height / rows).toInt().coerceIn(0, height - 1)
+            for (column in 0 until columns) {
+                val x = ((column + 0.5f) * width / columns).toInt().coerceIn(0, width - 1)
+                val pixel = bitmap.getPixel(x, y)
+                val luminance =
+                    (77 * Color.red(pixel) + 150 * Color.green(pixel) + 29 * Color.blue(pixel)) shr 8
+                result[row * columns + column] = luminance
+            }
+        }
+
+        return result
+    }
+
+    private fun viewportDifference(first: IntArray, second: IntArray): Float {
+        if (first.size != second.size) return Float.MAX_VALUE
+
+        var difference = 0L
+        for (index in first.indices) {
+            difference += kotlin.math.abs(first[index] - second[index]).toLong()
+        }
+        return difference.toFloat() / first.size
+    }
+
+$marker
         if (
             transitionGeneration != generation ||
             revealStarted ||
@@ -365,13 +436,17 @@ internal class SandfoxPageTransitionController(
     }
 
     private fun showBlurredDestinationFrame(bitmap: Bitmap) {
-        removeTransitionView()
+        transitionView?.let {
+            it.animate().cancel()
+            it.setImageDrawable(null)
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
 
         val image =
             ImageView(container.context).apply {
                 setImageBitmap(bitmap)
                 scaleType = ImageView.ScaleType.FIT_XY
-                alpha = 1f
+                alpha = 0f
                 scaleX = DESTINATION_START_SCALE
                 scaleY = DESTINATION_START_SCALE
             }
@@ -383,6 +458,34 @@ internal class SandfoxPageTransitionController(
         )
         transitionView = image
         applyBlur(image, MAX_DESTINATION_BLUR)
+
+        val source = sourceHandoffView
+        if (source != null) {
+            source.animate().cancel()
+            image.animate()
+                .alpha(1f)
+                .setDuration(SOURCE_TO_DESTINATION_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+            source.animate()
+                .alpha(0f)
+                .setDuration(SOURCE_TO_DESTINATION_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    if (sourceHandoffView === source) {
+                        sourceHandoffView = null
+                    }
+                    source.setImageDrawable(null)
+                    (source.parent as? ViewGroup)?.removeView(source)
+                }
+                .start()
+        } else {
+            image.animate()
+                .alpha(1f)
+                .setDuration(FRESH_DESTINATION_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
     }
 
     private fun showDestinationOverlay(
@@ -516,12 +619,6 @@ internal class SandfoxPageTransitionController(
             (it.parent as? ViewGroup)?.removeView(it)
         }
         sourceHandoffView = null
-        pwaSplashView?.let {
-            it.animate().cancel()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.setRenderEffect(null)
-            (it.parent as? ViewGroup)?.removeView(it)
-        }
-        pwaSplashView = null
     }
 
     private fun resetNavigationState() {
@@ -534,6 +631,10 @@ internal class SandfoxPageTransitionController(
         firstFrameShownAt = 0L
         sourceHandoffPending = false
         preserveCandidateOnNextBind = false
+        viewportCheckPending = false
+        viewportStableSamples = 0
+        lastViewportSignature = null
+        firstViewportFrameAt = 0L
     }
 
     private fun applyBlur(view: android.view.View, radius: Float) {
@@ -570,11 +671,16 @@ internal class SandfoxPageTransitionController(
         const val REVEAL_PROGRESS = 95
         const val MIN_BLUR_DISPLAY_MS = 110L
         const val REVEAL_DURATION_MS = 220L
-        const val SOURCE_HANDOFF_DURATION_MS = 90L
+        const val SOURCE_TO_DESTINATION_FADE_MS = 180L
+        const val FRESH_DESTINATION_FADE_MS = 180L
         const val MAX_DESTINATION_BLUR = 10f
-        const val PWA_SPLASH_BLUR = 18f
-        const val PWA_SPLASH_TO_PAGE_MS = 180L
-        const val DESTINATION_START_SCALE = 1.012f
+        const val DESTINATION_START_SCALE = 1.008f
+        const val VIEWPORT_SAMPLE_INTERVAL_MS = 120L
+        const val MIN_VIEWPORT_SETTLE_MS = 240L
+        const val VIEWPORT_STABILITY_THRESHOLD = 3.0f
+        const val VIEWPORT_STABLE_REQUIRED_SAMPLES = 2
+        const val VIEWPORT_SIGNATURE_COLUMNS = 16
+        const val VIEWPORT_SIGNATURE_ROWS = 16
 
         const val NAVIGATION_SAFETY_TIMEOUT_MS = 6000L
         const val PWA_SAFETY_TIMEOUT_MS = 8000L
