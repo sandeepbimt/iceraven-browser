@@ -91,7 +91,6 @@ import org.mozilla.fenix.settings.account.AccountUiView
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
 import org.mozilla.fenix.snackbar.SnackbarBinding
 import org.mozilla.fenix.utils.Settings
-import org.mozilla.geckoview.WebExtensionController
 
 /** Main settings screen. */
 @Suppress("LargeClass", "TooManyFunctions")
@@ -217,7 +216,6 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
-        setupUBlockGlobalPreference()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -284,8 +282,6 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
         requireView()
             .findViewById<RecyclerView>(R.id.recycler_view)
             ?.hideInitialScrollBar(viewLifecycleOwner.lifecycleScope)
-
-        findPreference<SwitchPreferenceCompat>(getPreferenceKey(R.string.pref_key_ublock_global))?.let(::refreshUBlockGlobalPreference)
 
         args.preferenceToScrollTo?.let {
             scrollToPreferenceWithHighlight(it)
@@ -919,66 +915,9 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
         }
     }
 
-    private fun setupUBlockGlobalPreference() {
-        val preference =
-            findPreference<SwitchPreferenceCompat>(
-                getPreferenceKey(R.string.pref_key_ublock_global),
-            ) ?: return
-
-        preference.setOnPreferenceChangeListener { _, newValue ->
-            val enabled = newValue as Boolean
-            preference.isEnabled = false
-            val controller = components.core.geckoRuntime.webExtensionController
-            controller.list().accept(
-                { extensions ->
-                    val extension = extensions.orEmpty().firstOrNull { it.id == UBLOCK_ORIGIN_ID }
-                    if (extension == null) {
-                        preference.isChecked = !enabled
-                        preference.isEnabled = true
-                        return@accept
-                    }
-                    val result =
-                        if (enabled) {
-                            controller.enable(extension, WebExtensionController.EnableSource.USER)
-                        } else {
-                            controller.disable(extension, WebExtensionController.EnableSource.USER)
-                        }
-                    result.accept(
-                        { updated ->
-                            preference.isChecked = updated?.metaData?.enabled ?: enabled
-                            preference.isEnabled = true
-                        },
-                        {
-                            preference.isChecked = !enabled
-                            preference.isEnabled = true
-                        },
-                    )
-                },
-                {
-                    preference.isChecked = !enabled
-                    preference.isEnabled = true
-                },
-            )
-            true
-        }
-        refreshUBlockGlobalPreference(preference)
-    }
-
-    private fun refreshUBlockGlobalPreference(preference: SwitchPreferenceCompat) {
-        components.core.geckoRuntime.webExtensionController.list().accept(
-            { extensions ->
-                extensions.orEmpty()
-                    .firstOrNull { it.id == UBLOCK_ORIGIN_ID }
-                    ?.let { preference.isChecked = it.metaData.enabled }
-            },
-            { /* Keep the last known UI state if extension enumeration fails. */ },
-        )
-    }
-
     companion object {
         private const val SCROLL_INDICATOR_DELAY = 10L
         private const val FXA_SYNC_OVERRIDE_EXIT_DELAY = 2000L
         private const val AMO_COLLECTION_OVERRIDE_EXIT_DELAY = 3000L
-        private const val UBLOCK_ORIGIN_ID = "uBlock0@raymondhill.net"
     }
 }

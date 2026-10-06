@@ -4229,7 +4229,4 @@
     <string name="standalone_web_app_choose_icon">Choose image</string>
     <string name="standalone_web_app_use_default_icon">Use default</string>
     <string name="standalone_web_app_cancel">Cancel</string>
-    <string name="pref_key_ublock_global" translatable="false">pref_key_ublock_global</string>
-    <string name="preferences_ublock_global">uBlock Origin</string>
-    <string name="preferences_ublock_global_summary">Enable or disable uBlock Origin globally.</string>
 </resources>

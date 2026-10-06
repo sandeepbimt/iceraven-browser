@@ -175,12 +175,6 @@
             app:iconSpaceReserved="false"
             android:title="@string/preferences_extensions" />
 
-        <androidx.preference.SwitchPreferenceCompat
-            android:key="@string/pref_key_ublock_global"
-            android:title="@string/preferences_ublock_global"
-            android:summary="@string/preferences_ublock_global_summary"
-            app:iconSpaceReserved="false" />
-
         <androidx.preference.Preference
             android:key="@string/pref_key_install_local_addon"
             app:iconSpaceReserved="false"
