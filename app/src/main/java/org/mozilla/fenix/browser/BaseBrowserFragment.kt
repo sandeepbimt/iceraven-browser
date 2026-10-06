@@ -398,7 +398,7 @@ abstract class BaseBrowserFragment :
         )
 
         _binding = FragmentBrowserBinding.inflate(inflater, container, false)
-        pageTransitionController = SandfoxPageTransitionController(binding.browserLayout, viewLifecycleOwner)
+        pageTransitionController = SandfoxPageTransitionController(binding.browserLayout, binding.engineView, viewLifecycleOwner)
 
         val originalContext = ActivityContextWrapper.getOriginalContext(requireActivity())
         binding.engineView.setActivityContext(originalContext)
