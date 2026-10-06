@@ -28,7 +28,6 @@ import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BaseBrowserFragment
-import org.mozilla.fenix.components.menu.StandaloneWebAppIconStore
 import org.mozilla.fenix.debug.IceravenDebugTrace
 import org.mozilla.fenix.browser.ContextMenuSnackbarDelegate
 import org.mozilla.fenix.browser.CustomTabColorsBinding
@@ -101,12 +100,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
                 customTabSession?.config?.externalAppType == ExternalAppType.TRUSTED_WEB_ACTIVITY
 
         if (customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP) {
-            val splashColor =
-                StandaloneWebAppIconStore.getSplashColor(requireContext(), customTabSession.content.url)
-            startSandfoxPwaLaunchTransition(
-                customTabSession.engineState.engineSession,
-                splashColor,
-            )
+            startSandfoxPwaLaunchTransition(customTabSession.engineState.engineSession)
         }
 
         // A manifest-less standalone web shortcut has no trusted scope for Gecko's
