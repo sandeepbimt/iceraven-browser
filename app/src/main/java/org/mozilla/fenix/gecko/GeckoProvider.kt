@@ -23,6 +23,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.WebExtensionController
 
 object GeckoProvider {
     private const val SANDFOX_ADBLOCK_EXTENSION_URI =
@@ -76,7 +77,16 @@ object GeckoProvider {
                 SANDFOX_ADBLOCK_EXTENSION_ID,
             )
             .accept(
-                {},
+                { extension ->
+                    geckoRuntime.getWebExtensionController()
+                        .enable(extension, WebExtensionController.EnableSource.APP)
+                        .accept(
+                            {},
+                            { error ->
+                                error?.let(context.components.analytics.crashReporter::submitCaughtException)
+                            },
+                        )
+                },
                 { error -> error?.let(context.components.analytics.crashReporter::submitCaughtException) },
             )
 
