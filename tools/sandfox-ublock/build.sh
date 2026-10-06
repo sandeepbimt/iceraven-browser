@@ -64,18 +64,6 @@ if old not in text:
 path.write_text(text.replace(old, new, 1))
 PY
 
-python3 - "$WORK_DIR/src/js/background.js" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-text = path.read_text()
-old = "    suspendUntilListsAreLoaded: vAPI.Net.canSuspend(),"
-new_value = "    suspendUntilListsAreLoaded: false,"
-if old not in text:
-    raise SystemExit("uBO suspend default anchor not found")
-path.write_text(text.replace(old, new_value, 1))
-PY
-
 make -C "$WORK_DIR" firefox
 
 rm -rf app/src/main/assets/extensions/ublock_origin
