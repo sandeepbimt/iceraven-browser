@@ -30,6 +30,7 @@ internal class SandfoxPageTransitionController(
     private var lastLoading = false
     private var readyGeneration: Long? = null
     private var navigationRequested = false
+    private var directBlurTransition = false
 
     private val observer = object : EngineSession.Observer {
         override fun onLoadRequest(url: String, triggeredByRedirect: Boolean, triggeredByWebContent: Boolean) {
@@ -52,8 +53,12 @@ internal class SandfoxPageTransitionController(
         override fun onFirstContentfulPaint() {
             val currentGeneration = generation
             readyGeneration = currentGeneration
-            transitionView?.let { image ->
-                if (transitionAnimator == null) revealLivePage(image, currentGeneration)
+            if (directBlurTransition && transitionView == null) {
+                revealDirectBlur(currentGeneration)
+            } else {
+                transitionView?.let { image ->
+                    if (transitionAnimator == null) revealLivePage(image, currentGeneration)
+                }
             }
         }
 
@@ -85,6 +90,7 @@ internal class SandfoxPageTransitionController(
         navigationRequested = true
         generation++
         readyGeneration = null
+        directBlurTransition = false
         cancelTransition()
         val currentGeneration = generation
         engineView.asView().alpha = 1f
@@ -93,13 +99,74 @@ internal class SandfoxPageTransitionController(
 
     private fun captureCurrentPage(currentGeneration: Long) {
         engineView.captureThumbnail { bitmap ->
-            if (bitmap == null || currentGeneration != generation) return@captureThumbnail
+            if (currentGeneration != generation || !navigationRequested) return@captureThumbnail
             container.post {
-                if (currentGeneration == generation && navigationRequested) {
+                if (currentGeneration != generation || !navigationRequested) return@post
+                if (bitmap != null) {
                     showOutgoingCover(bitmap, currentGeneration)
+                } else {
+                    showDirectBlur(currentGeneration)
                 }
             }
         }
+    }
+
+    private fun showDirectBlur(transitionGeneration: Long) {
+        if (transitionGeneration != generation || !navigationRequested) return
+        directBlurTransition = true
+        val liveView = engineView.asView()
+        liveView.alpha = 1f
+        liveView.scaleX = REVEAL_START_SCALE
+        liveView.scaleY = REVEAL_START_SCALE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            liveView.setRenderEffect(
+                RenderEffect.createBlurEffect(
+                    MAX_BLUR_RADIUS,
+                    MAX_BLUR_RADIUS,
+                    Shader.TileMode.CLAMP,
+                ),
+            )
+        }
+        if (readyGeneration == transitionGeneration) {
+            revealDirectBlur(transitionGeneration)
+        }
+    }
+
+    private fun revealDirectBlur(transitionGeneration: Long) {
+        if (!directBlurTransition || transitionGeneration != generation) return
+        val liveView = engineView.asView()
+        val animator = ValueAnimator.ofFloat(MAX_BLUR_RADIUS, 0f).apply {
+            duration = INCOMING_DURATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { value ->
+                val radius = value.animatedValue as Float
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    liveView.setRenderEffect(
+                        RenderEffect.createBlurEffect(
+                            radius,
+                            radius,
+                            Shader.TileMode.CLAMP,
+                        ),
+                    )
+                }
+                val scale = 1f + ((REVEAL_START_SCALE - 1f) * (radius / MAX_BLUR_RADIUS))
+                liveView.scaleX = scale
+                liveView.scaleY = scale
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    transitionAnimator = null
+                    directBlurTransition = false
+                    navigationRequested = false
+                    liveView.alpha = 1f
+                    liveView.scaleX = 1f
+                    liveView.scaleY = 1f
+                    clearEngineEffect()
+                }
+            })
+        }
+        transitionAnimator = animator
+        animator.start()
     }
 
     private fun showOutgoingCover(bitmap: Bitmap, transitionGeneration: Long) {
@@ -191,7 +258,10 @@ internal class SandfoxPageTransitionController(
         transitionAnimator?.cancel()
         transitionAnimator = null
         removeTransition()
+        directBlurTransition = false
         engineView.asView().alpha = 1f
+        engineView.asView().scaleX = 1f
+        engineView.asView().scaleY = 1f
         clearEngineEffect()
     }
 
@@ -213,6 +283,7 @@ internal class SandfoxPageTransitionController(
         generation++
         readyGeneration = null
         navigationRequested = false
+        directBlurTransition = false
         cancelTransition()
         engineView.asView().alpha = 1f
         session?.unregister(observer)
