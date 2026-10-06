@@ -61,10 +61,10 @@ internal class SandfoxPageTransitionController(
         ) {
             if (!triggeredByWebContent || triggeredByRedirect || directBlurTransition) return
 
-            // A web-content load request is already a navigation request. Arm immediately so the
-            // visual handoff begins at the user's link action rather than waiting for a later
-            // loading-state callback.
-            beginNavigationCandidate(immediateVisual = true)
+            // A web-content load request is already a navigation transaction. Prepare the
+            // outgoing frame immediately, but do not touch the live Gecko surface until the
+            // captured source frame is actually ready.
+            beginNavigationCandidate()
         }
 
         override fun onNavigateBack() {
@@ -138,7 +138,7 @@ internal class SandfoxPageTransitionController(
     fun prepareNavigationTransition() {
         if (session == null || directBlurTransition) return
 
-        beginNavigationCandidate(immediateVisual = true)
+        beginNavigationCandidate()
     }
 
     /**
@@ -182,7 +182,7 @@ internal class SandfoxPageTransitionController(
         cancelSafetyTimeout()
     }
 
-    private fun beginNavigationCandidate(immediateVisual: Boolean) {
+    private fun beginNavigationCandidate() {
         if (session == null || navigationCandidate || directBlurTransition) return
 
         generation++
@@ -193,14 +193,8 @@ internal class SandfoxPageTransitionController(
         readyForReveal = false
         pendingBitmap = null
 
-        if (immediateVisual) {
-            val liveView = engineView.asView()
-            liveView.alpha = 1f
-            liveView.scaleX = NAVIGATION_START_SCALE
-            liveView.scaleY = NAVIGATION_START_SCALE
-            applyBlur(liveView, MAX_BLUR_RADIUS)
-        }
-
+        // Never blur or transform the live Gecko surface speculatively. The old page must remain
+        // fully usable until its captured frame is ready to take visual ownership.
         val currentGeneration = generation
         captureCurrentPage(currentGeneration)
 
