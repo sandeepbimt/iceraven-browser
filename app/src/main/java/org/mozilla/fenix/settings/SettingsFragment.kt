@@ -945,7 +945,7 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
                         }
                     result.accept(
                         { updated ->
-                            preference.isChecked = updated.metaData.enabled
+                            preference.isChecked = updated?.metaData?.enabled ?: enabled
                             preference.isEnabled = true
                         },
                         {
