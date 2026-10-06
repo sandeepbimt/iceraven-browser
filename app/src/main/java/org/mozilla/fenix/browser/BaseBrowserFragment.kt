@@ -1950,6 +1950,11 @@ abstract class BaseBrowserFragment :
                     dismissDownloadDialogs()
                     dismissRenameDialog()
                     handleTabSelected(it, isCustomTabSession)
+                    pageTransitionController?.bind(
+                        session = it.engineState.engineSession,
+                        showInitialCover = isInitialPageForTransition(it),
+                        isLoading = it.content.loading,
+                    )
                 }
         }
     }
