@@ -21,15 +21,19 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.EngineSession
 
 /**
- * Readiness-gated page handoff inspired by Chromium's Android navigation blur transition.
+ * Destination-first page transition engine.
  *
- * Navigation is first identified and the outgoing surface is prepared without immediately
- * covering the live page. The cover is shown only after a real loading edge is observed.
- * The destination remains underneath until first contentful paint, then the cover is removed
- * with a short cross-fade. A bounded safety timeout always restores the live Gecko view.
+ * The live Gecko surface is never blurred or hidden speculatively. During a navigation the
+ * current page is therefore allowed to remain normal while Gecko loads the destination.
  *
- * Fresh PWA launches use the same reveal mechanism without an outgoing-page screenshot:
- * the live Gecko surface is blurred immediately and is revealed at first contentful paint.
+ * Once the destination has meaningful content and is sufficiently far through loading, SANDFOX
+ * captures the destination frame, places that bitmap above Gecko, and reveals it by removing the
+ * blur. This makes the blur describe "the page that is loading" instead of blurring the page
+ * the user just left.
+ *
+ * The same destination overlay is used for normal links, address-bar loads, Back/Forward and
+ * standalone PWA launches. It is deliberately an Android ImageView overlay so it also works
+ * with GeckoView's normal SurfaceView-backed rendering without changing the Gecko surface type.
  */
 internal class SandfoxPageTransitionController(
     private val container: ViewGroup,
@@ -44,13 +48,12 @@ internal class SandfoxPageTransitionController(
 
     private var generation = 0L
     private var lastLoading = false
+    private var loadProgress = 0
+    private var firstPaintSeen = false
 
     private var navigationCandidate = false
-    private var loadingConfirmed = false
-    private var readyForReveal = false
-    private var pendingBitmap: Bitmap? = null
-
-    private var directBlurTransition = false
+    private var directPwaTransition = false
+    private var revealStarted = false
     private var safetyTimeout: Runnable? = null
 
     private val observer = object : EngineSession.Observer {
@@ -59,55 +62,39 @@ internal class SandfoxPageTransitionController(
             triggeredByRedirect: Boolean,
             triggeredByWebContent: Boolean,
         ) {
-            if (!triggeredByWebContent || triggeredByRedirect || directBlurTransition) return
+            if (!triggeredByWebContent || triggeredByRedirect || directPwaTransition) return
 
-            // A web-content load request is already a navigation transaction. Prepare the
-            // outgoing frame immediately, but do not touch the live Gecko surface until the
-            // captured source frame is actually ready.
             beginNavigationCandidate()
         }
 
         override fun onNavigateBack() {
-            // History navigation is initiated explicitly by BaseBrowserFragment. Do not start a
-            // transition from this observer callback because it can arrive after Gecko has
-            // already changed the rendered surface.
+            // Back/Forward is armed explicitly by BaseBrowserFragment before the history action.
+            // Do not start a second transition here.
+        }
+
+        override fun onProgress(progress: Int) {
+            if (!navigationCandidate && !directPwaTransition) return
+
+            loadProgress = progress.coerceIn(0, 100)
+            maybeRevealDestination()
         }
 
         override fun onLoadingStateChange(loading: Boolean) {
-            if (loading && !lastLoading && navigationCandidate) {
-                loadingConfirmed = true
-                showPreparedCoverIfReady()
-            }
             lastLoading = loading
+
+            if (!navigationCandidate && !directPwaTransition) return
+
+            maybeRevealDestination()
         }
 
         override fun onFirstContentfulPaint() {
-            if (directBlurTransition) {
-                readyForReveal = true
-                revealDirectBlur(generation)
-                return
-            }
-
-            if (!navigationCandidate) return
-
-            readyForReveal = true
-
-            // If the destination reached FCP before the screenshot cover was ready, do not
-            // introduce a late blur. The page is already usable, so simply abandon the
-            // transition candidate.
-            transitionView?.let { image ->
-                if (transitionAnimator == null) {
-                    revealLivePage(image, generation)
-                }
-            } ?: finishWithoutTransition()
+            firstPaintSeen = true
+            maybeRevealDestination()
         }
 
         override fun onPaintStatusReset() {
-            // Paint resets can occur while a valid navigation is still loading. They must not
-            // cancel a live transition and leave the user behind a frozen screenshot.
-            if (!navigationCandidate && !directBlurTransition) {
-                restoreLiveView()
-            }
+            // A paint reset can happen during a valid navigation. Keep the state machine alive;
+            // the destination progress/FCP events decide when it is safe to reveal.
         }
     }
 
@@ -119,33 +106,28 @@ internal class SandfoxPageTransitionController(
         this.session = session
 
         generation++
-        lastLoading = false
-        navigationCandidate = false
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
+        resetNavigationState()
 
         session?.register(observer, lifecycleOwner, autoPause = false)
     }
 
     /**
-     * Arms a navigation transition before a browser-initiated Back/Forward action.
+     * Arms a destination transition before browser-initiated Back/Forward.
      *
-     * The screenshot is captured now, but it is not shown until Gecko confirms an actual
-     * loading edge. This preserves the old page without interfering with same-document or
-     * instant history/BFCache restores.
+     * No visual mutation happens here. This is intentionally cheap so cached history restores
+     * can leave the old page immediately and only animate the destination frame.
      */
     fun prepareNavigationTransition() {
-        if (session == null || directBlurTransition) return
-
+        if (session == null || directPwaTransition) return
         beginNavigationCandidate()
     }
 
     /**
-     * Starts the fresh-launch transition used by standalone PWAs.
+     * Starts the standalone PWA transition. There is no outgoing page to animate; the first
+     * meaningful PWA frame is shown blurred and then revealed.
      *
-     * There is no previous page to capture. The live Gecko surface is covered by a light blur
-     * immediately, then revealed when FCP arrives. The timeout is only a safety escape.
+     * We never apply RenderEffect to the live Gecko surface because GeckoView normally uses a
+     * SurfaceView-backed renderer. The transition is therefore entirely overlay-based.
      */
     fun startPwaLaunchTransition() {
         if (session == null) return
@@ -153,96 +135,119 @@ internal class SandfoxPageTransitionController(
         generation++
         clearVisualTransition()
 
-        navigationCandidate = false
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
-        directBlurTransition = true
+        resetNavigationState()
+        directPwaTransition = true
 
-        val liveView = engineView.asView()
-        liveView.alpha = 1f
-        liveView.scaleX = PWA_START_SCALE
-        liveView.scaleY = PWA_START_SCALE
-        applyBlur(liveView, MAX_BLUR_RADIUS)
+        val currentGeneration = generation
+        scheduleSafetyTimeout(currentGeneration, PWA_SAFETY_TIMEOUT_MS)
 
-        scheduleSafetyTimeout(generation, PWA_SAFETY_TIMEOUT_MS)
+        // If the PWA is already visually ready when this hook runs, give the observer a short
+        // window to deliver FCP/progress. This does not force a blank screenshot onto the user.
+        mainHandler.postDelayed(
+            {
+                if (
+                    currentGeneration == generation &&
+                    directPwaTransition &&
+                    !revealStarted &&
+                    firstPaintSeen
+                ) {
+                    revealDestination(currentGeneration)
+                }
+            },
+            PWA_LATE_READY_CHECK_MS,
+        )
     }
 
     /**
-     * Cancels an armed navigation candidate when the browser action did not actually navigate.
+     * Cancels an armed navigation candidate when the browser action did not navigate.
      */
     fun cancelNavigationTransition() {
-        if (!navigationCandidate || transitionView != null || directBlurTransition) return
+        if (!navigationCandidate || directPwaTransition) return
 
         generation++
-        navigationCandidate = false
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
+        resetNavigationState()
         cancelSafetyTimeout()
+        removeTransitionView()
     }
 
     private fun beginNavigationCandidate() {
-        if (session == null || navigationCandidate || directBlurTransition) return
+        if (session == null || navigationCandidate || directPwaTransition) return
 
         generation++
         clearVisualTransition()
 
+        resetNavigationState()
         navigationCandidate = true
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
 
-        // Never blur or transform the live Gecko surface speculatively. The old page must remain
-        // fully usable until its captured frame is ready to take visual ownership.
         val currentGeneration = generation
-        captureCurrentPage(currentGeneration)
-
-        // A candidate that never becomes a real loading edge must expire quickly. This is the
-        // main guard against blur being triggered later by an unrelated page event.
-        scheduleSafetyTimeout(currentGeneration, CANDIDATE_TIMEOUT_MS)
+        scheduleSafetyTimeout(currentGeneration, NAVIGATION_SAFETY_TIMEOUT_MS)
     }
 
-    private fun captureCurrentPage(currentGeneration: Long) {
-        engineView.captureThumbnail { bitmap ->
-            if (currentGeneration != generation || !navigationCandidate) return@captureThumbnail
+    /**
+     * Reveal only after the destination has enough evidence to be useful.
+     *
+     * FCP says meaningful content exists. Progress >= 90 says the load is near completion.
+     * If Gecko reports loading=false after FCP, that is also a valid completion signal. This
+     * combination avoids exposing a blank/half-built destination while avoiding an indefinite
+     * hold on pages whose progress meter does not reach exactly 100.
+     */
+    private fun maybeRevealDestination() {
+        if (revealStarted || (!navigationCandidate && !directPwaTransition)) return
+        if (!firstPaintSeen) return
 
-            container.post {
-                if (currentGeneration != generation || !navigationCandidate) return@post
+        val sufficientlyLoaded = loadProgress >= REVEAL_PROGRESS || !lastLoading
+        if (!sufficientlyLoaded) return
 
-                pendingBitmap = bitmap
-
-                if (navigationCandidate && !readyForReveal) {
-                    showPreparedCoverIfReady()
-                }
-            }
-        }
+        revealDestination(generation)
     }
 
-    private fun showPreparedCoverIfReady() {
-        val bitmap = pendingBitmap ?: return
+    private fun revealDestination(transitionGeneration: Long) {
         if (
-            !navigationCandidate ||
-            readyForReveal ||
-            transitionView != null
+            transitionGeneration != generation ||
+            revealStarted ||
+            (!navigationCandidate && !directPwaTransition)
         ) {
             return
         }
 
+        revealStarted = true
         cancelSafetyTimeout()
 
-        val currentGeneration = generation
-        val image = ImageView(container.context).apply {
-            setImageBitmap(bitmap)
-            scaleType = ImageView.ScaleType.FIT_XY
-            alpha = 1f
-            scaleX = NAVIGATION_START_SCALE
-            scaleY = NAVIGATION_START_SCALE
-        }
+        engineView.captureThumbnail { bitmap ->
+            if (transitionGeneration != generation) return@captureThumbnail
 
-        val liveView = engineView.asView()
-        liveView.alpha = 0f
-        clearEngineEffect()
+            container.post {
+                if (
+                    transitionGeneration != generation ||
+                    (!navigationCandidate && !directPwaTransition)
+                ) {
+                    return@post
+                }
+
+                if (bitmap == null) {
+                    finishWithoutAnimation()
+                    return@post
+                }
+
+                showDestinationOverlay(bitmap, transitionGeneration)
+            }
+        }
+    }
+
+    private fun showDestinationOverlay(
+        bitmap: Bitmap,
+        transitionGeneration: Long,
+    ) {
+        removeTransitionView()
+
+        val image =
+            ImageView(container.context).apply {
+                setImageBitmap(bitmap)
+                scaleType = ImageView.ScaleType.FIT_XY
+                alpha = 1f
+                scaleX = DESTINATION_START_SCALE
+                scaleY = DESTINATION_START_SCALE
+            }
 
         container.addView(
             image,
@@ -251,68 +256,9 @@ internal class SandfoxPageTransitionController(
         )
         transitionView = image
 
-        runOutgoingSettle(image, currentGeneration)
-        scheduleSafetyTimeout(currentGeneration, NAVIGATION_SAFETY_TIMEOUT_MS)
-    }
-
-    private fun runOutgoingSettle(image: ImageView, transitionGeneration: Long) {
-        val animator =
-            ValueAnimator.ofFloat(0f, MAX_BLUR_RADIUS).apply {
-                duration = OUTGOING_DURATION_MS
-                interpolator = DecelerateInterpolator()
-                addUpdateListener { value ->
-                    if (transitionGeneration != generation) return@addUpdateListener
-
-                    val radius = value.animatedValue as Float
-                    applyBlur(image, radius)
-
-                    val progress = radius / MAX_BLUR_RADIUS
-                    val scale =
-                        NAVIGATION_START_SCALE -
-                            ((NAVIGATION_START_SCALE - HOLD_SCALE) * progress)
-                    image.scaleX = scale
-                    image.scaleY = scale
-                }
-                addListener(
-                    object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
-                            if (transitionAnimator === animation) {
-                                transitionAnimator = null
-                            }
-
-                            if (transitionGeneration == generation && readyForReveal) {
-                                revealLivePage(image, transitionGeneration)
-                            }
-                        }
-                    },
-                )
-            }
-
-        transitionAnimator = animator
-        animator.start()
-    }
-
-    private fun revealLivePage(image: ImageView, transitionGeneration: Long) {
-        if (
-            transitionGeneration != generation ||
-            !navigationCandidate ||
-            transitionView !== image ||
-            !readyForReveal
-        ) {
-            return
-        }
-
-        cancelSafetyTimeout()
-
-        val liveView = engineView.asView()
-        liveView.alpha = 1f
-        liveView.scaleX = HOLD_SCALE
-        liveView.scaleY = HOLD_SCALE
-        applyBlur(liveView, MAX_BLUR_RADIUS)
-
         val animator =
             ValueAnimator.ofFloat(1f, 0f).apply {
-                duration = INCOMING_DURATION_MS
+                duration = REVEAL_DURATION_MS
                 interpolator = DecelerateInterpolator()
                 addUpdateListener { value ->
                     if (transitionGeneration != generation) return@addUpdateListener
@@ -320,15 +266,14 @@ internal class SandfoxPageTransitionController(
                     val alpha = value.animatedValue as Float
                     image.alpha = alpha
 
-                    val radius = MAX_BLUR_RADIUS * alpha
-                    applyBlur(image, radius)
-                    applyBlur(liveView, radius)
+                    val blur = MAX_DESTINATION_BLUR * alpha
+                    applyBlur(image, blur)
 
-                    val scale = 1f - ((1f - HOLD_SCALE) * alpha)
+                    val scale =
+                        1f +
+                            ((DESTINATION_START_SCALE - 1f) * alpha)
                     image.scaleX = scale
                     image.scaleY = scale
-                    liveView.scaleX = scale
-                    liveView.scaleY = scale
                 }
                 addListener(
                     object : AnimatorListenerAdapter() {
@@ -339,60 +284,15 @@ internal class SandfoxPageTransitionController(
 
                             if (transitionGeneration == generation) {
                                 navigationCandidate = false
-                                loadingConfirmed = false
-                                readyForReveal = false
-                                pendingBitmap = null
-                                restoreLiveView()
+                                directPwaTransition = false
+                                resetNavigationState()
                                 removeTransitionView()
                             }
                         }
-                    },
-                )
-            }
 
-        transitionAnimator = animator
-        animator.start()
-    }
-
-    private fun revealDirectBlur(transitionGeneration: Long) {
-        if (
-            !directBlurTransition ||
-            transitionGeneration != generation ||
-            !readyForReveal
-        ) {
-            return
-        }
-
-        cancelSafetyTimeout()
-
-        val liveView = engineView.asView()
-
-        val animator =
-            ValueAnimator.ofFloat(MAX_BLUR_RADIUS, 0f).apply {
-                duration = INCOMING_DURATION_MS
-                interpolator = DecelerateInterpolator()
-                addUpdateListener { value ->
-                    if (transitionGeneration != generation) return@addUpdateListener
-
-                    val radius = value.animatedValue as Float
-                    applyBlur(liveView, radius)
-
-                    val scale =
-                        1f +
-                            ((PWA_START_SCALE - 1f) * (radius / MAX_BLUR_RADIUS))
-                    liveView.scaleX = scale
-                    liveView.scaleY = scale
-                }
-                addListener(
-                    object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
+                        override fun onAnimationCancel(animation: Animator) {
                             if (transitionAnimator === animation) {
                                 transitionAnimator = null
-                            }
-
-                            if (transitionGeneration == generation) {
-                                directBlurTransition = false
-                                restoreLiveView()
                             }
                         }
                     },
@@ -403,14 +303,13 @@ internal class SandfoxPageTransitionController(
         animator.start()
     }
 
-    private fun finishWithoutTransition() {
+    private fun finishWithoutAnimation() {
         generation++
         navigationCandidate = false
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
+        directPwaTransition = false
+        resetNavigationState()
         cancelSafetyTimeout()
-        clearVisualTransition()
+        removeTransitionView()
     }
 
     private fun scheduleSafetyTimeout(
@@ -423,17 +322,17 @@ internal class SandfoxPageTransitionController(
             Runnable {
                 if (transitionGeneration != generation) return@Runnable
 
-                // Safety always wins over visual continuity: never leave a stale blurred page
-                // covering Gecko indefinitely.
-                navigationCandidate = false
-                loadingConfirmed = false
-                readyForReveal = false
-                pendingBitmap = null
-                directBlurTransition = false
-                transitionAnimator?.cancel()
-                transitionAnimator = null
-                restoreLiveView()
-                removeTransitionView()
+                // Never leave a stale transition layer over a live page. If meaningful content
+                // arrived, reveal it even if progress stalled; otherwise simply abandon the
+                // visual transition and let Gecko continue normally.
+                if (firstPaintSeen) {
+                    revealDestination(transitionGeneration)
+                } else {
+                    navigationCandidate = false
+                    directPwaTransition = false
+                    resetNavigationState()
+                    removeTransitionView()
+                }
             }
 
         safetyTimeout = timeout
@@ -450,16 +349,6 @@ internal class SandfoxPageTransitionController(
         transitionAnimator = null
         cancelSafetyTimeout()
         removeTransitionView()
-        restoreLiveView()
-        directBlurTransition = false
-    }
-
-    private fun restoreLiveView() {
-        val liveView = engineView.asView()
-        liveView.alpha = 1f
-        liveView.scaleX = 1f
-        liveView.scaleY = 1f
-        clearEngineEffect()
     }
 
     private fun removeTransitionView() {
@@ -472,32 +361,35 @@ internal class SandfoxPageTransitionController(
         transitionView = null
     }
 
-    private fun applyBlur(view: android.view.View, radius: Float) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            view.setRenderEffect(
-                RenderEffect.createBlurEffect(
-                    radius,
-                    radius,
-                    Shader.TileMode.CLAMP,
-                ),
-            )
-        }
+    private fun resetNavigationState() {
+        lastLoading = false
+        loadProgress = 0
+        firstPaintSeen = false
+        revealStarted = false
     }
 
-    private fun clearEngineEffect() {
+    private fun applyBlur(view: android.view.View, radius: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            engineView.asView().setRenderEffect(null)
+            if (radius <= 0f) {
+                view.setRenderEffect(null)
+            } else {
+                view.setRenderEffect(
+                    RenderEffect.createBlurEffect(
+                        radius,
+                        radius,
+                        Shader.TileMode.CLAMP,
+                    ),
+                )
+            }
         }
     }
 
     private fun cancelTransition() {
         generation++
         navigationCandidate = false
-        loadingConfirmed = false
-        readyForReveal = false
-        pendingBitmap = null
+        directPwaTransition = false
         clearVisualTransition()
-        restoreLiveView()
+        resetNavigationState()
     }
 
     fun destroy() {
@@ -507,18 +399,13 @@ internal class SandfoxPageTransitionController(
     }
 
     private companion object {
-        // Chromium's refined Android blur transition uses a short hold/fade model. SANDFOX keeps
-        // the visual effect lighter and uses readiness rather than a fixed-duration reveal.
-        const val OUTGOING_DURATION_MS = 100L
-        const val INCOMING_DURATION_MS = 150L
-        const val MAX_BLUR_RADIUS = 5f
+        const val REVEAL_PROGRESS = 90
+        const val REVEAL_DURATION_MS = 260L
+        const val MAX_DESTINATION_BLUR = 10f
+        const val DESTINATION_START_SCALE = 1.012f
 
-        const val NAVIGATION_START_SCALE = 1.008f
-        const val PWA_START_SCALE = 1.006f
-        const val HOLD_SCALE = 0.999f
-
-        const val CANDIDATE_TIMEOUT_MS = 900L
-        const val NAVIGATION_SAFETY_TIMEOUT_MS = 2500L
-        const val PWA_SAFETY_TIMEOUT_MS = 4000L
+        const val NAVIGATION_SAFETY_TIMEOUT_MS = 6000L
+        const val PWA_SAFETY_TIMEOUT_MS = 8000L
+        const val PWA_LATE_READY_CHECK_MS = 250L
     }
 }
