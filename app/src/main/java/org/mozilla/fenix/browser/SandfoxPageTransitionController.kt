@@ -4,21 +4,20 @@
 
 package org.mozilla.fenix.browser
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.graphics.Bitmap
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.os.Build
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
-import androidx.annotation.RequiresApi
 import androidx.lifecycle.LifecycleOwner
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.EngineSession
 
-/**
- * Readiness-gated page handoff. The outgoing rendered page covers Gecko immediately while the
- * next page loads underneath. Once first contentful paint is available, the cover fades away.
- */
 internal class SandfoxPageTransitionController(
     private val container: ViewGroup,
     private val engineView: EngineView,
@@ -30,24 +29,23 @@ internal class SandfoxPageTransitionController(
     private var generation = 0L
     private var lastLoading = false
     private var readyGeneration: Long? = null
+    private var navigationRequested = false
 
     private val observer = object : EngineSession.Observer {
-        override fun onLoadingStateChange(loading: Boolean) {
-            if (loading && !lastLoading) {
-                generation++
-                readyGeneration = null
-                cancelTransition()
+        override fun onLoadRequest(url: String, triggeredByRedirect: Boolean, triggeredByWebContent: Boolean) {
+            if (!triggeredByRedirect) startNavigationTransition()
+        }
 
-                val currentGeneration = generation
-                engineView.captureThumbnail { bitmap ->
-                    if (bitmap == null || currentGeneration != generation) return@captureThumbnail
-                    container.post {
-                        if (currentGeneration == generation && readyGeneration != currentGeneration) {
-                            showOutgoingCover(bitmap, currentGeneration)
-                        }
-                    }
-                }
-            }
+        override fun onNavigateBack() {
+            startNavigationTransition()
+        }
+
+        override fun onLocationChange(url: String) {
+            if (transitionView == null && !navigationRequested) startNavigationTransition()
+        }
+
+        override fun onLoadingStateChange(loading: Boolean) {
+            if (loading && !lastLoading && !navigationRequested) startNavigationTransition()
             lastLoading = loading
         }
 
@@ -60,10 +58,11 @@ internal class SandfoxPageTransitionController(
         }
 
         override fun onPaintStatusReset() {
-            generation++
             readyGeneration = null
-            cancelTransition()
-            engineView.asView().alpha = 1f
+            if (transitionView == null) {
+                engineView.asView().alpha = 1f
+                clearEngineEffect()
+            }
         }
     }
 
@@ -71,12 +70,36 @@ internal class SandfoxPageTransitionController(
         if (this.session === session) return
         cancelTransition()
         engineView.asView().alpha = 1f
+        clearEngineEffect()
         this.session?.unregister(observer)
         this.session = session
         generation++
         lastLoading = false
         readyGeneration = null
+        navigationRequested = false
         session?.register(observer, lifecycleOwner, autoPause = false)
+    }
+
+    fun startNavigationTransition() {
+        if (session == null || navigationRequested) return
+        navigationRequested = true
+        generation++
+        readyGeneration = null
+        cancelTransition()
+        val currentGeneration = generation
+        engineView.asView().alpha = 1f
+        captureCurrentPage(currentGeneration)
+    }
+
+    private fun captureCurrentPage(currentGeneration: Long) {
+        engineView.captureThumbnail { bitmap ->
+            if (bitmap == null || currentGeneration != generation) return@captureThumbnail
+            container.post {
+                if (currentGeneration == generation && navigationRequested) {
+                    showOutgoingCover(bitmap, currentGeneration)
+                }
+            }
+        }
     }
 
     private fun showOutgoingCover(bitmap: Bitmap, transitionGeneration: Long) {
@@ -91,36 +114,30 @@ internal class SandfoxPageTransitionController(
         engineView.asView().alpha = 0f
         container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         transitionView = image
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             runOutgoingSettle(image, transitionGeneration)
         } else {
-            image.animate()
-                .scaleX(1f).scaleY(1f)
-                .setDuration(OUTGOING_DURATION_MS)
-                .setInterpolator(DecelerateInterpolator())
-                .withEndAction {
+            image.animate().scaleX(1f).scaleY(1f).setDuration(OUTGOING_DURATION_MS)
+                .setInterpolator(DecelerateInterpolator()).withEndAction {
                     transitionAnimator = null
                     if (readyGeneration == transitionGeneration) revealLivePage(image, transitionGeneration)
                 }.start()
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.S)
     private fun runOutgoingSettle(image: ImageView, transitionGeneration: Long) {
-        val animator = ValueAnimator.ofFloat(MAX_BLUR_RADIUS, HOLD_BLUR_RADIUS).apply {
+        val animator = ValueAnimator.ofFloat(0f, MAX_BLUR_RADIUS).apply {
             duration = OUTGOING_DURATION_MS
             interpolator = DecelerateInterpolator()
             addUpdateListener { value ->
                 val radius = value.animatedValue as Float
-                image.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
-                    radius, radius, android.graphics.Shader.TileMode.CLAMP))
-                val progress = (MAX_BLUR_RADIUS - radius) / (MAX_BLUR_RADIUS - HOLD_BLUR_RADIUS)
+                image.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP))
+                val progress = radius / MAX_BLUR_RADIUS
                 image.scaleX = REVEAL_START_SCALE - ((REVEAL_START_SCALE - HOLD_SCALE) * progress)
                 image.scaleY = image.scaleX
             }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
                     transitionAnimator = null
                     if (readyGeneration == transitionGeneration) revealLivePage(image, transitionGeneration)
                 }
@@ -132,26 +149,36 @@ internal class SandfoxPageTransitionController(
 
     private fun revealLivePage(image: ImageView, transitionGeneration: Long) {
         if (readyGeneration != transitionGeneration || transitionView !== image) return
+        val liveView = engineView.asView()
+        liveView.alpha = 1f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            liveView.setRenderEffect(RenderEffect.createBlurEffect(MAX_BLUR_RADIUS, MAX_BLUR_RADIUS, Shader.TileMode.CLAMP))
+        }
         val animator = ValueAnimator.ofFloat(1f, 0f).apply {
             duration = INCOMING_DURATION_MS
             interpolator = DecelerateInterpolator()
             addUpdateListener { value ->
                 val alpha = value.animatedValue as Float
                 image.alpha = alpha
-                engineView.asView().alpha = 1f - alpha
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val radius = HOLD_BLUR_RADIUS * alpha
-                    image.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
-                        radius, radius, android.graphics.Shader.TileMode.CLAMP))
+                    val radius = MAX_BLUR_RADIUS * alpha
+                    liveView.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP))
+                    image.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP))
                 }
                 val scale = 1f - ((1f - HOLD_SCALE) * alpha)
                 image.scaleX = scale
                 image.scaleY = scale
+                liveView.scaleX = scale
+                liveView.scaleY = scale
             }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
                     transitionAnimator = null
-                    engineView.asView().alpha = 1f
+                    navigationRequested = false
+                    liveView.alpha = 1f
+                    liveView.scaleX = 1f
+                    liveView.scaleY = 1f
+                    clearEngineEffect()
                     removeTransition()
                 }
             })
@@ -164,6 +191,8 @@ internal class SandfoxPageTransitionController(
         transitionAnimator?.cancel()
         transitionAnimator = null
         removeTransition()
+        engineView.asView().alpha = 1f
+        clearEngineEffect()
     }
 
     private fun removeTransition() {
@@ -174,9 +203,16 @@ internal class SandfoxPageTransitionController(
         transitionView = null
     }
 
+    private fun clearEngineEffect() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            engineView.asView().setRenderEffect(null)
+        }
+    }
+
     fun destroy() {
         generation++
         readyGeneration = null
+        navigationRequested = false
         cancelTransition()
         engineView.asView().alpha = 1f
         session?.unregister(observer)
@@ -184,10 +220,9 @@ internal class SandfoxPageTransitionController(
     }
 
     private companion object {
-        const val OUTGOING_DURATION_MS = 180L
+        const val OUTGOING_DURATION_MS = 140L
         const val INCOMING_DURATION_MS = 220L
-        const val MAX_BLUR_RADIUS = 10f
-        const val HOLD_BLUR_RADIUS = 3f
+        const val MAX_BLUR_RADIUS = 8f
         const val REVEAL_START_SCALE = 1.012f
         const val HOLD_SCALE = 0.998f
     }
