@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
@@ -54,6 +55,9 @@ internal class SandfoxPageTransitionController(
     private var navigationCandidate = false
     private var directPwaTransition = false
     private var revealStarted = false
+    private var firstFrameCapturePending = false
+    private var firstFrameShown = false
+    private var firstFrameShownAt = 0L
     private var safetyTimeout: Runnable? = null
 
     private val observer = object : EngineSession.Observer {
@@ -76,6 +80,7 @@ internal class SandfoxPageTransitionController(
             if (!navigationCandidate && !directPwaTransition) return
 
             loadProgress = progress.coerceIn(0, 100)
+            maybeStartDestinationCover()
             maybeRevealDestination()
         }
 
@@ -84,11 +89,13 @@ internal class SandfoxPageTransitionController(
 
             if (!navigationCandidate && !directPwaTransition) return
 
+            maybeStartDestinationCover()
             maybeRevealDestination()
         }
 
         override fun onFirstContentfulPaint() {
             firstPaintSeen = true
+            maybeStartDestinationCover()
             maybeRevealDestination()
         }
 
@@ -145,13 +152,9 @@ internal class SandfoxPageTransitionController(
         // window to deliver FCP/progress. This does not force a blank screenshot onto the user.
         mainHandler.postDelayed(
             {
-                if (
-                    currentGeneration == generation &&
-                    directPwaTransition &&
-                    !revealStarted &&
-                    firstPaintSeen
-                ) {
-                    revealDestination(currentGeneration)
+                if (currentGeneration == generation && directPwaTransition && !revealStarted) {
+                    maybeStartDestinationCover()
+                    maybeRevealDestination()
                 }
             },
             PWA_LATE_READY_CHECK_MS,
@@ -184,19 +187,67 @@ internal class SandfoxPageTransitionController(
     }
 
     /**
-     * Reveal only after the destination has enough evidence to be useful.
-     *
-     * FCP says meaningful content exists. Progress >= 90 says the load is near completion.
-     * If Gecko reports loading=false after FCP, that is also a valid completion signal. This
-     * combination avoids exposing a blank/half-built destination while avoiding an indefinite
-     * hold on pages whose progress meter does not reach exactly 100.
+     * FCP is the start of the visual transition, not its end. GeckoView explicitly notes that
+     * FCP can be as little as the page background, so we capture that first visible frame and
+     * keep it blurred while the destination continues rendering. Only after the visible load is
+     * sufficiently complete do we capture the final frame and run the blur-out animation.
+     */
+    private fun maybeStartDestinationCover() {
+        if (
+            firstFrameShown ||
+            firstFrameCapturePending ||
+            !firstPaintSeen ||
+            (!navigationCandidate && !directPwaTransition)
+        ) {
+            return
+        }
+
+        firstFrameCapturePending = true
+        val transitionGeneration = generation
+
+        engineView.captureThumbnail { bitmap ->
+            if (transitionGeneration != generation) return@captureThumbnail
+
+            container.post {
+                if (
+                    transitionGeneration != generation ||
+                    (!navigationCandidate && !directPwaTransition)
+                ) {
+                    return@post
+                }
+
+                firstFrameCapturePending = false
+                if (bitmap == null) return@post
+
+                showBlurredDestinationFrame(bitmap)
+                firstFrameShown = true
+                firstFrameShownAt = SystemClock.uptimeMillis()
+                maybeRevealDestination()
+            }
+        }
+    }
+
+    /**
+     * Reveal only after the destination has enough evidence to be useful. The first blurred
+     * frame is deliberately kept visible until then, so fast and slow pages follow the same
+     * visual sequence instead of sometimes skipping the animation entirely.
      */
     private fun maybeRevealDestination() {
         if (revealStarted || (!navigationCandidate && !directPwaTransition)) return
-        if (!firstPaintSeen) return
+        if (!firstPaintSeen || !firstFrameShown) return
 
         val sufficientlyLoaded = loadProgress >= REVEAL_PROGRESS || !lastLoading
         if (!sufficientlyLoaded) return
+
+        val elapsed = SystemClock.uptimeMillis() - firstFrameShownAt
+        val remainingMinimumDisplay = MIN_BLUR_DISPLAY_MS - elapsed
+        if (remainingMinimumDisplay > 0L) {
+            mainHandler.postDelayed(
+                { maybeRevealDestination() },
+                remainingMinimumDisplay,
+            )
+            return
+        }
 
         revealDestination(generation)
     }
@@ -225,6 +276,7 @@ internal class SandfoxPageTransitionController(
                 }
 
                 if (bitmap == null) {
+                    // A failed final capture must never leave the browser covered indefinitely.
                     finishWithoutAnimation()
                     return@post
                 }
@@ -232,6 +284,27 @@ internal class SandfoxPageTransitionController(
                 showDestinationOverlay(bitmap, transitionGeneration)
             }
         }
+    }
+
+    private fun showBlurredDestinationFrame(bitmap: Bitmap) {
+        removeTransitionView()
+
+        val image =
+            ImageView(container.context).apply {
+                setImageBitmap(bitmap)
+                scaleType = ImageView.ScaleType.FIT_XY
+                alpha = 1f
+                scaleX = DESTINATION_START_SCALE
+                scaleY = DESTINATION_START_SCALE
+            }
+
+        container.addView(
+            image,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+        transitionView = image
+        applyBlur(image, MAX_DESTINATION_BLUR)
     }
 
     private fun showDestinationOverlay(
@@ -255,6 +328,7 @@ internal class SandfoxPageTransitionController(
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
         transitionView = image
+        applyBlur(image, MAX_DESTINATION_BLUR)
 
         val animator =
             ValueAnimator.ofFloat(1f, 0f).apply {
@@ -366,6 +440,9 @@ internal class SandfoxPageTransitionController(
         loadProgress = 0
         firstPaintSeen = false
         revealStarted = false
+        firstFrameCapturePending = false
+        firstFrameShown = false
+        firstFrameShownAt = 0L
     }
 
     private fun applyBlur(view: android.view.View, radius: Float) {
@@ -400,7 +477,8 @@ internal class SandfoxPageTransitionController(
 
     private companion object {
         const val REVEAL_PROGRESS = 90
-        const val REVEAL_DURATION_MS = 260L
+        const val MIN_BLUR_DISPLAY_MS = 100L
+        const val REVEAL_DURATION_MS = 220L
         const val MAX_DESTINATION_BLUR = 10f
         const val DESTINATION_START_SCALE = 1.012f
 
