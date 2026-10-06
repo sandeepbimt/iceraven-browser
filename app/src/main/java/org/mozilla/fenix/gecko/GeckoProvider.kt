@@ -67,6 +67,9 @@ object GeckoProvider {
 
         val geckoRuntime = GeckoRuntime.create(context, runtimeSettings)
 
+        // V2: start Gecko initialization immediately, without waiting for the first page.
+        geckoRuntime.warmUp()
+
         geckoRuntime.getWebExtensionController()
             .ensureBuiltIn(
                 SANDFOX_ADBLOCK_EXTENSION_URI,

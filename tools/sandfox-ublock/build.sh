@@ -64,6 +64,18 @@ if old not in text:
 path.write_text(text.replace(old, new, 1))
 PY
 
+python3 - "$WORK_DIR/src/js/background.js" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+old = "    suspendUntilListsAreLoaded: vAPI.Net.canSuspend(),"
+new_value = "    suspendUntilListsAreLoaded: false,"
+if old not in text:
+    raise SystemExit("uBO suspend default anchor not found")
+path.write_text(text.replace(old, new_value, 1))
+PY
+
 make -C "$WORK_DIR" firefox
 
 rm -rf app/src/main/assets/extensions/ublock_origin
@@ -73,3 +85,13 @@ cp -a "$WORK_DIR/dist/build/uBlock0.firefox/." app/src/main/assets/extensions/ub
 test -f app/src/main/assets/extensions/ublock_origin/manifest.json
 test -f app/src/main/assets/extensions/ublock_origin/js/start.js
 test -f app/src/main/assets/extensions/ublock_origin/js/contentscript.js
+
+python3 - "app/src/main/assets/extensions/ublock_origin/manifest.json" <<'PY'
+from pathlib import Path
+import json
+import sys
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["version"] = "1.9.15.102"
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
