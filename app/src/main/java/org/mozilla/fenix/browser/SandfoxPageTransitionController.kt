@@ -8,6 +8,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
@@ -45,6 +46,8 @@ internal class SandfoxPageTransitionController(
 
     private var session: EngineSession? = null
     private var transitionView: ImageView? = null
+    private var sourceHandoffView: ImageView? = null
+    private var pwaSplashView: ImageView? = null
     private var transitionAnimator: ValueAnimator? = null
 
     private var generation = 0L
@@ -58,6 +61,8 @@ internal class SandfoxPageTransitionController(
     private var firstFrameCapturePending = false
     private var firstFrameShown = false
     private var firstFrameShownAt = 0L
+    private var sourceHandoffPending = false
+    private var preserveCandidateOnNextBind = false
     private var safetyTimeout: Runnable? = null
 
     private val observer = object : EngineSession.Observer {
@@ -68,7 +73,7 @@ internal class SandfoxPageTransitionController(
         ) {
             if (!triggeredByWebContent || triggeredByRedirect || directPwaTransition) return
 
-            beginNavigationCandidate()
+            beginNavigationCandidate(hasPreviousPage = true, preserveAcrossTabSwitch = false)
         }
 
         override fun onNavigateBack() {
@@ -108,6 +113,14 @@ internal class SandfoxPageTransitionController(
     fun bind(session: EngineSession?) {
         if (this.session === session) return
 
+        if (navigationCandidate && preserveCandidateOnNextBind) {
+            this.session?.unregister(observer)
+            this.session = session
+            preserveCandidateOnNextBind = false
+            session?.register(observer, lifecycleOwner, autoPause = false)
+            return
+        }
+
         cancelTransition()
         this.session?.unregister(observer)
         this.session = session
@@ -124,9 +137,12 @@ internal class SandfoxPageTransitionController(
      * No visual mutation happens here. This is intentionally cheap so cached history restores
      * can leave the old page immediately and only animate the destination frame.
      */
-    fun prepareNavigationTransition() {
+    fun prepareNavigationTransition(
+        hasPreviousPage: Boolean = true,
+        preserveAcrossTabSwitch: Boolean = false,
+    ) {
         if (session == null || directPwaTransition) return
-        beginNavigationCandidate()
+        beginNavigationCandidate(hasPreviousPage, preserveAcrossTabSwitch)
     }
 
     /**
@@ -136,7 +152,7 @@ internal class SandfoxPageTransitionController(
      * We never apply RenderEffect to the live Gecko surface because GeckoView normally uses a
      * SurfaceView-backed renderer. The transition is therefore entirely overlay-based.
      */
-    fun startPwaLaunchTransition() {
+    fun startPwaLaunchTransition(splashColor: Int? = null) {
         if (session == null) return
 
         generation++
@@ -144,6 +160,7 @@ internal class SandfoxPageTransitionController(
 
         resetNavigationState()
         directPwaTransition = true
+        showPwaSplash(splashColor)
 
         val currentGeneration = generation
         scheduleSafetyTimeout(currentGeneration, PWA_SAFETY_TIMEOUT_MS)
@@ -173,14 +190,22 @@ internal class SandfoxPageTransitionController(
         removeTransitionView()
     }
 
-    private fun beginNavigationCandidate() {
+    private fun beginNavigationCandidate(
+        hasPreviousPage: Boolean,
+        preserveAcrossTabSwitch: Boolean,
+    ) {
         if (session == null || navigationCandidate || directPwaTransition) return
 
         generation++
         clearVisualTransition()
-
         resetNavigationState()
         navigationCandidate = true
+        preserveCandidateOnNextBind = preserveAcrossTabSwitch
+
+        if (hasPreviousPage) {
+            sourceHandoffPending = true
+            captureSourceHandoff(generation)
+        }
 
         val currentGeneration = generation
         scheduleSafetyTimeout(currentGeneration, NAVIGATION_SAFETY_TIMEOUT_MS)
@@ -192,6 +217,58 @@ internal class SandfoxPageTransitionController(
      * keep it blurred while the destination continues rendering. Only after the visible load is
      * sufficiently complete do we capture the final frame and run the blur-out animation.
      */
+    private fun captureSourceHandoff(transitionGeneration: Long) {
+        engineView.captureThumbnail { bitmap ->
+            if (transitionGeneration != generation) return@captureThumbnail
+            container.post {
+                if (transitionGeneration != generation || !navigationCandidate || !sourceHandoffPending) return@post
+                sourceHandoffPending = false
+                if (bitmap != null) showSourceHandoff(bitmap, transitionGeneration)
+            }
+        }
+    }
+
+    private fun showSourceHandoff(bitmap: Bitmap, transitionGeneration: Long) {
+        sourceHandoffView?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        val image = ImageView(container.context).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.FIT_XY
+            alpha = 1f
+        }
+        container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        sourceHandoffView = image
+        image.animate().alpha(0f).setDuration(SOURCE_HANDOFF_DURATION_MS)
+            .setInterpolator(DecelerateInterpolator()).withEndAction {
+                if (transitionGeneration == generation) {
+                    sourceHandoffView = null
+                    (image.parent as? ViewGroup)?.removeView(image)
+                    image.setImageDrawable(null)
+                }
+            }.start()
+    }
+
+    private fun showPwaSplash(splashColor: Int?) {
+        val image = ImageView(container.context).apply {
+            setBackgroundColor(splashColor ?: Color.rgb(32, 32, 32))
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            alpha = 1f
+        }
+        container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        pwaSplashView = image
+        applyBlur(image, PWA_SPLASH_BLUR)
+    }
+
+    private fun dismissPwaSplash() {
+        val splash = pwaSplashView ?: return
+        splash.animate().alpha(0f).setDuration(PWA_SPLASH_TO_PAGE_MS)
+            .setInterpolator(DecelerateInterpolator()).withEndAction {
+                if (pwaSplashView === splash) {
+                    pwaSplashView = null
+                    (splash.parent as? ViewGroup)?.removeView(splash)
+                }
+            }.start()
+    }
+
     private fun maybeStartDestinationCover() {
         if (
             firstFrameShown ||
@@ -220,6 +297,7 @@ internal class SandfoxPageTransitionController(
                 if (bitmap == null) return@post
 
                 showBlurredDestinationFrame(bitmap)
+                if (directPwaTransition) dismissPwaSplash()
                 firstFrameShown = true
                 firstFrameShownAt = SystemClock.uptimeMillis()
                 maybeRevealDestination()
@@ -426,13 +504,24 @@ internal class SandfoxPageTransitionController(
     }
 
     private fun removeTransitionView() {
-        val view = transitionView ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            view.setRenderEffect(null)
+        transitionView?.let { view ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) view.setRenderEffect(null)
+            view.setImageDrawable(null)
+            (view.parent as? ViewGroup)?.removeView(view)
         }
-        view.setImageDrawable(null)
-        (view.parent as? ViewGroup)?.removeView(view)
         transitionView = null
+        sourceHandoffView?.let {
+            it.animate().cancel()
+            it.setImageDrawable(null)
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+        sourceHandoffView = null
+        pwaSplashView?.let {
+            it.animate().cancel()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.setRenderEffect(null)
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+        pwaSplashView = null
     }
 
     private fun resetNavigationState() {
@@ -443,6 +532,8 @@ internal class SandfoxPageTransitionController(
         firstFrameCapturePending = false
         firstFrameShown = false
         firstFrameShownAt = 0L
+        sourceHandoffPending = false
+        preserveCandidateOnNextBind = false
     }
 
     private fun applyBlur(view: android.view.View, radius: Float) {
@@ -476,10 +567,13 @@ internal class SandfoxPageTransitionController(
     }
 
     private companion object {
-        const val REVEAL_PROGRESS = 90
-        const val MIN_BLUR_DISPLAY_MS = 100L
+        const val REVEAL_PROGRESS = 95
+        const val MIN_BLUR_DISPLAY_MS = 110L
         const val REVEAL_DURATION_MS = 220L
+        const val SOURCE_HANDOFF_DURATION_MS = 90L
         const val MAX_DESTINATION_BLUR = 10f
+        const val PWA_SPLASH_BLUR = 18f
+        const val PWA_SPLASH_TO_PAGE_MS = 180L
         const val DESTINATION_START_SCALE = 1.012f
 
         const val NAVIGATION_SAFETY_TIMEOUT_MS = 6000L

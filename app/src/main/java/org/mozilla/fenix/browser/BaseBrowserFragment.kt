@@ -401,14 +401,23 @@ abstract class BaseBrowserFragment :
         _binding = FragmentBrowserBinding.inflate(inflater, container, false)
         pageTransitionController = SandfoxPageTransitionController(binding.browserLayout, binding.engineView, viewLifecycleOwner)
         if (customTabSessionId == null) {
-            requireComponents.useCases.fenixBrowserUseCases.beforeLoadNavigation = { destination ->
+            requireComponents.useCases.fenixBrowserUseCases.beforeLoadNavigation = { destination, newTab ->
                 val currentUrl =
                     requireComponents.core.store.state
                         .findTabOrCustomTabOrSelectedTab(customTabSessionId)
                         ?.content
                         ?.url
-                if (destination.trim() != currentUrl?.trim()) {
-                    pageTransitionController?.prepareNavigationTransition()
+                val sameUrl = !newTab && destination.trim() == currentUrl?.trim()
+                if (!sameUrl) {
+                    val hasPreviousWebPage =
+                        !newTab &&
+                            !currentUrl.isNullOrBlank() &&
+                            currentUrl != ABOUT_HOME_URL &&
+                            currentUrl != "about:blank"
+                    pageTransitionController?.prepareNavigationTransition(
+                        hasPreviousPage = hasPreviousWebPage,
+                        preserveAcrossTabSwitch = newTab,
+                    )
                 }
             }
         }
@@ -1896,9 +1905,12 @@ abstract class BaseBrowserFragment :
         reinitializeEngineView()
     }
 
-    internal fun startSandfoxPwaLaunchTransition(session: EngineSession?) {
+    internal fun startSandfoxPwaLaunchTransition(
+        session: EngineSession?,
+        splashColor: Int? = null,
+    ) {
         pageTransitionController?.bind(session)
-        pageTransitionController?.startPwaLaunchTransition()
+        pageTransitionController?.startPwaLaunchTransition(splashColor)
     }
 
     private fun removeBottomToolbarDivider() {
@@ -2147,7 +2159,7 @@ abstract class BaseBrowserFragment :
             ?: requireComponents.core.store.state.findTabOrCustomTabOrSelectedTab(customTabSessionId)
         val canGoBack = currentSession?.content?.canGoBack == true
         if (canGoBack) {
-            pageTransitionController?.prepareNavigationTransition()
+            pageTransitionController?.prepareNavigationTransition(hasPreviousPage = true)
         }
         val handledBySession = sessionFeature.onBackPressed()
         if (!handledBySession) {
@@ -2173,7 +2185,7 @@ abstract class BaseBrowserFragment :
             ?: requireComponents.core.store.state.findTabOrCustomTabOrSelectedTab(customTabSessionId)
         val canGoForward = currentSession?.content?.canGoForward == true
         if (canGoForward) {
-            pageTransitionController?.prepareNavigationTransition()
+            pageTransitionController?.prepareNavigationTransition(hasPreviousPage = true)
         }
         val handled = sessionFeature.onForwardPressed()
         if (!handled) {
