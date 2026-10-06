@@ -399,6 +399,18 @@ abstract class BaseBrowserFragment :
 
         _binding = FragmentBrowserBinding.inflate(inflater, container, false)
         pageTransitionController = SandfoxPageTransitionController(binding.browserLayout, binding.engineView, viewLifecycleOwner)
+        if (customTabSessionId == null) {
+            requireComponents.useCases.fenixBrowserUseCases.beforeLoadNavigation = { destination ->
+                val currentUrl =
+                    requireComponents.core.store.state
+                        .findTabOrCustomTabOrSelectedTab(customTabSessionId)
+                        ?.content
+                        ?.url
+                if (destination.trim() != currentUrl?.trim()) {
+                    pageTransitionController?.prepareNavigationTransition()
+                }
+            }
+        }
 
         val originalContext = ActivityContextWrapper.getOriginalContext(requireActivity())
         binding.engineView.setActivityContext(originalContext)
@@ -1883,7 +1895,8 @@ abstract class BaseBrowserFragment :
         reinitializeEngineView()
     }
 
-    internal fun startSandfoxPwaLaunchTransition() {
+    internal fun startSandfoxPwaLaunchTransition(session: EngineSession?) {
+        pageTransitionController?.bind(session)
         pageTransitionController?.startPwaLaunchTransition()
     }
 
@@ -2129,7 +2142,12 @@ abstract class BaseBrowserFragment :
             return true
         }
 
-        pageTransitionController?.prepareNavigationTransition()
+        val currentSession = customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it) }
+            ?: requireComponents.core.store.state.findTabOrCustomTabOrSelectedTab(customTabSessionId)
+        val canGoBack = currentSession?.content?.canGoBack == true
+        if (canGoBack) {
+            pageTransitionController?.prepareNavigationTransition()
+        }
         val handledBySession = sessionFeature.onBackPressed()
         if (!handledBySession) {
             pageTransitionController?.cancelNavigationTransition()
@@ -2150,7 +2168,12 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onForwardPressed(): Boolean {
-        pageTransitionController?.prepareNavigationTransition()
+        val currentSession = customTabSessionId?.let { requireComponents.core.store.state.findCustomTab(it) }
+            ?: requireComponents.core.store.state.findTabOrCustomTabOrSelectedTab(customTabSessionId)
+        val canGoForward = currentSession?.content?.canGoForward == true
+        if (canGoForward) {
+            pageTransitionController?.prepareNavigationTransition()
+        }
         val handled = sessionFeature.onForwardPressed()
         if (!handled) {
             pageTransitionController?.cancelNavigationTransition()
@@ -2449,6 +2472,9 @@ abstract class BaseBrowserFragment :
         // https://github.com/mozilla-mobile/android-components/issues/7960
         breadcrumb(message = "onDestroyView()")
 
+        if (customTabSessionId == null) {
+            requireComponents.useCases.fenixBrowserUseCases.beforeLoadNavigation = null
+        }
         pageTransitionController?.destroy()
         pageTransitionController = null
         binding.engineView.setActivityContext(null)

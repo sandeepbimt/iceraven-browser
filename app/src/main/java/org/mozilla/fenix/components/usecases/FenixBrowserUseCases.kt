@@ -35,6 +35,8 @@ class FenixBrowserUseCases(
     private val homepageTitle: String,
     private val profiler: Profiler?,
 ) {
+    /** Called immediately before an existing-tab browser-chrome navigation is dispatched. */
+    var beforeLoadNavigation: ((destination: String) -> Unit)? = null
     /**
      * Loads a URL or performs a search depending on the value of [searchTermOrURL].
      *
@@ -59,6 +61,9 @@ class FenixBrowserUseCases(
         additionalHeaders: Map<String, String>? = null,
     ) {
         val startTime = profiler?.getProfilerTime()
+        if (!newTab) {
+            beforeLoadNavigation?.invoke(searchTermOrURL)
+        }
 
         // In situations where we want to perform a search but have no search engine (e.g. the user
         // has removed all of them, or we couldn't load any) we will pass searchTermOrURL to Gecko

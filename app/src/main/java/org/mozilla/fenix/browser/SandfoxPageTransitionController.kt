@@ -59,11 +59,12 @@ internal class SandfoxPageTransitionController(
             triggeredByRedirect: Boolean,
             triggeredByWebContent: Boolean,
         ) {
-            if (triggeredByRedirect || directBlurTransition) return
+            if (!triggeredByWebContent || triggeredByRedirect || directBlurTransition) return
 
-            // Treat this only as a navigation candidate. This avoids showing a transition for
-            // arbitrary page activity; onLoadingStateChange(true) is the confirmation signal.
-            beginNavigationCandidate()
+            // A web-content load request is already a navigation request. Arm immediately so the
+            // visual handoff begins at the user's link action rather than waiting for a later
+            // loading-state callback.
+            beginNavigationCandidate(immediateVisual = true)
         }
 
         override fun onNavigateBack() {
@@ -137,7 +138,7 @@ internal class SandfoxPageTransitionController(
     fun prepareNavigationTransition() {
         if (session == null || directBlurTransition) return
 
-        beginNavigationCandidate()
+        beginNavigationCandidate(immediateVisual = true)
     }
 
     /**
@@ -181,8 +182,8 @@ internal class SandfoxPageTransitionController(
         cancelSafetyTimeout()
     }
 
-    private fun beginNavigationCandidate() {
-        if (session == null) return
+    private fun beginNavigationCandidate(immediateVisual: Boolean) {
+        if (session == null || navigationCandidate || directBlurTransition) return
 
         generation++
         clearVisualTransition()
@@ -191,6 +192,14 @@ internal class SandfoxPageTransitionController(
         loadingConfirmed = false
         readyForReveal = false
         pendingBitmap = null
+
+        if (immediateVisual) {
+            val liveView = engineView.asView()
+            liveView.alpha = 1f
+            liveView.scaleX = NAVIGATION_START_SCALE
+            liveView.scaleY = NAVIGATION_START_SCALE
+            applyBlur(liveView, MAX_BLUR_RADIUS)
+        }
 
         val currentGeneration = generation
         captureCurrentPage(currentGeneration)
@@ -209,7 +218,7 @@ internal class SandfoxPageTransitionController(
 
                 pendingBitmap = bitmap
 
-                if (loadingConfirmed && !readyForReveal) {
+                if (navigationCandidate && !readyForReveal) {
                     showPreparedCoverIfReady()
                 }
             }
@@ -220,7 +229,6 @@ internal class SandfoxPageTransitionController(
         val bitmap = pendingBitmap ?: return
         if (
             !navigationCandidate ||
-            !loadingConfirmed ||
             readyForReveal ||
             transitionView != null
         ) {
@@ -240,6 +248,7 @@ internal class SandfoxPageTransitionController(
 
         val liveView = engineView.asView()
         liveView.alpha = 0f
+        clearEngineEffect()
 
         container.addView(
             image,
