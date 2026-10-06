@@ -155,7 +155,7 @@ internal class SandfoxPageTransitionController(
      * We never apply RenderEffect to the live Gecko surface because GeckoView normally uses a
      * SurfaceView-backed renderer. The transition is therefore entirely overlay-based.
      */
-    fun startPwaLaunchTransition(splashColor: Int? = null) {
+    fun startPwaLaunchTransition() {
         if (session == null) return
 
         generation++
