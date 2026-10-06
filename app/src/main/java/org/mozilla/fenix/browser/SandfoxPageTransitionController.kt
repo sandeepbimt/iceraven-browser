@@ -41,10 +41,6 @@ internal class SandfoxPageTransitionController(
             startNavigationTransition()
         }
 
-        override fun onLocationChange(url: String) {
-            if (transitionView == null && !navigationRequested) startNavigationTransition()
-        }
-
         override fun onLoadingStateChange(loading: Boolean) {
             if (loading && !lastLoading && !navigationRequested) startNavigationTransition()
             lastLoading = loading
