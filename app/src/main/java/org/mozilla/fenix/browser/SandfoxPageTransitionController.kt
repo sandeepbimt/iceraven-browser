@@ -4,247 +4,152 @@
 
 package org.mozilla.fenix.browser
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.graphics.Color
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
+import android.animation.ValueAnimator
+import android.graphics.Bitmap
+import android.os.Build
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
-import android.widget.FrameLayout
 import android.widget.ImageView
-import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.LifecycleOwner
+import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.EngineSession
 import org.mozilla.fenix.R
 
-/** Lightweight, non-blocking visual handoff for page loading. */
+/**
+ * Non-blocking page handoff that reveals the actual rendered page from a short blur.
+ *
+ * Gecko keeps loading/rendering normally. Once first contentful paint is available, Gecko's
+ * rendered thumbnail is placed above the live page and animated from blurred to sharp. This
+ * gives navigation a polished visual handoff without holding first paint behind a splash.
+ */
 internal class SandfoxPageTransitionController(
     private val container: ViewGroup,
+    private val engineView: EngineView,
     private val lifecycleOwner: LifecycleOwner,
 ) {
     private var session: EngineSession? = null
-    private var progressView: View? = null
-    private var coverView: FrameLayout? = null
-    private var showRunnable: Runnable? = null
-    private var initialCoverEnabled = false
-    private var hasPainted = false
-    private var finishing = false
+    private var transitionView: ImageView? = null
+    private var transitionAnimator: ValueAnimator? = null
+    private var generation = 0L
+    private var lastLoading = false
 
     private val observer = object : EngineSession.Observer {
         override fun onLoadingStateChange(loading: Boolean) {
-            if (loading) beginLoading() else finishTransition()
-        }
-
-        override fun onProgress(progress: Int) {
-            val view = progressView ?: return
-            if (view.alpha == 0f) return
-            val target = progress.coerceIn(4, 90) / 100f
-            view.animate()
-                .scaleX(maxOf(view.scaleX, target))
-                .setDuration(90L)
-                .setInterpolator(DecelerateInterpolator())
-                .start()
+            if (loading && !lastLoading) {
+                generation++
+                cancelTransition()
+            }
+            lastLoading = loading
         }
 
         override fun onFirstContentfulPaint() {
-            hasPainted = true
-            finishTransition()
+            val currentGeneration = generation
+            engineView.captureThumbnail { bitmap ->
+                if (bitmap == null || currentGeneration != generation) return@captureThumbnail
+                container.post {
+                    if (currentGeneration == generation) showReveal(bitmap)
+                }
+            }
         }
 
         override fun onPaintStatusReset() {
-            hasPainted = false
+            generation++
+            cancelTransition()
         }
     }
 
     fun bind(session: EngineSession?, showInitialCover: Boolean, isLoading: Boolean) {
-        if (this.session === session && initialCoverEnabled == showInitialCover) return
+        if (this.session === session) return
 
-        cancelPendingShow()
-        removeVisuals()
+        cancelTransition()
         this.session?.unregister(observer)
         this.session = session
-        initialCoverEnabled = showInitialCover
-        hasPainted = false
-        finishing = false
-
+        generation++
+        lastLoading = isLoading
         session?.register(observer, lifecycleOwner, autoPause = false)
-        if (isLoading) beginLoading()
     }
 
-    private fun beginLoading() {
-        finishing = false
-        cancelPendingShow()
-        showRunnable = Runnable {
-            showRunnable = null
-            showVisualsIfStillLoading()
-        }.also { container.postDelayed(it, SHOW_DELAY_MS) }
-    }
+    private fun showReveal(bitmap: Bitmap) {
+        cancelTransition()
 
-    private fun showVisualsIfStillLoading() {
-        if (finishing) return
+        val image = ImageView(container.context).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.FIT_XY
+            alpha = 1f
+            scaleX = REVEAL_START_SCALE
+            scaleY = REVEAL_START_SCALE
+        }
+        container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        transitionView = image
 
-        ensureProgressView()
-        progressView?.let { view ->
-            view.alpha = 0f
-            view.scaleX = MIN_PROGRESS_SCALE
-            view.animate()
-                .alpha(1f)
-                .scaleX(PROGRESS_START_SCALE)
-                .setDuration(120L)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runBlurReveal(image)
+        } else {
+            image.animate()
+                .alpha(0f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(REVEAL_DURATION_MS)
                 .setInterpolator(DecelerateInterpolator())
+                .withEndAction { removeTransition() }
                 .start()
         }
-
-        if (initialCoverEnabled && !hasPainted) showCover()
     }
 
-    private fun ensureProgressView() {
-        if (progressView != null) return
-        val view = View(container.context).apply {
-            setBackgroundColor(resolveAccentColor())
-            alpha = 0f
-            pivotX = 0f
-            pivotY = 0f
-            scaleX = 0f
-        }
-        val params = CoordinatorLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dpToPx(PROGRESS_HEIGHT_DP),
-        ).apply {
-            gravity = Gravity.TOP
-        }
-        container.addView(view, params)
-        progressView = view
-    }
-
-    private fun showCover() {
-        if (coverView != null) return
-        val cover = FrameLayout(container.context).apply {
-            setBackgroundColor(resolveBackgroundColor())
-            isClickable = true
-            isFocusable = true
-            alpha = 0f
-        }
-        val icon = ImageView(container.context).apply {
-            setImageResource(R.drawable.ic_splash_logo)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            alpha = 0f
-            scaleX = 0.94f
-            scaleY = 0.94f
-        }
-        cover.addView(icon, FrameLayout.LayoutParams(dpToPx(96), dpToPx(96), Gravity.CENTER))
-        val params = CoordinatorLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        )
-        container.addView(cover, params)
-        coverView = cover
-
-        cover.animate()
-            .alpha(1f)
-            .setDuration(90L)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-        icon.animate()
-            .alpha(1f)
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(140L)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-
-        container.postDelayed({
-            if (!hasPainted && coverView === cover) finishTransition()
-        }, MAX_COVER_MS)
-    }
-
-    private fun finishTransition() {
-        cancelPendingShow()
-        if (finishing) return
-        finishing = true
-
-        progressView?.animate()
-            ?.scaleX(1f)
-            ?.alpha(0f)
-            ?.setDuration(PROGRESS_FINISH_MS)
-            ?.setInterpolator(DecelerateInterpolator())
-            ?.withEndAction { removeProgressView() }
-            ?.start()
-
-        val cover = coverView ?: return
-        cover.animate()
-            .alpha(0f)
-            .setDuration(COVER_FADE_MS)
-            .setInterpolator(DecelerateInterpolator())
-            .setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    if (coverView === cover) {
-                        (cover.parent as? ViewGroup)?.removeView(cover)
-                        coverView = null
-                    }
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun runBlurReveal(image: ImageView) {
+        val animator = ValueAnimator.ofFloat(MAX_BLUR_RADIUS, 0f).apply {
+            duration = REVEAL_DURATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { value ->
+                val radius = value.animatedValue as Float
+                image.setRenderEffect(
+                    android.graphics.RenderEffect.createBlurEffect(
+                        radius,
+                        radius,
+                        android.graphics.Shader.TileMode.CLAMP,
+                    ),
+                )
+                val progress = 1f - (radius / MAX_BLUR_RADIUS)
+                image.scaleX = REVEAL_START_SCALE - ((REVEAL_START_SCALE - 1f) * progress)
+                image.scaleY = image.scaleX
+                image.alpha = if (progress < 0.78f) 1f else 1f - ((progress - 0.78f) / 0.22f)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    removeTransition()
                 }
             })
-            .start()
+        }
+        transitionAnimator = animator
+        animator.start()
     }
 
-    private fun removeVisuals() {
-        removeProgressView()
-        coverView?.let { (it.parent as? ViewGroup)?.removeView(it) }
-        coverView = null
-        finishing = false
+    private fun cancelTransition() {
+        transitionAnimator?.cancel()
+        transitionAnimator = null
+        removeTransition()
     }
 
-    private fun removeProgressView() {
-        progressView?.let { (it.parent as? ViewGroup)?.removeView(it) }
-        progressView = null
-    }
-
-    private fun cancelPendingShow() {
-        showRunnable?.let(container::removeCallbacks)
-        showRunnable = null
+    private fun removeTransition() {
+        val view = transitionView ?: return
+        view.setRenderEffect(null)
+        view.setImageDrawable(null)
+        (view.parent as? ViewGroup)?.removeView(view)
+        transitionView = null
     }
 
     fun destroy() {
-        cancelPendingShow()
+        generation++
+        cancelTransition()
         session?.unregister(observer)
         session = null
-        removeVisuals()
     }
-
-    private fun resolveBackgroundColor(): Int {
-        val value = TypedValue()
-        return if (
-            container.context.theme.resolveAttribute(android.R.attr.colorBackground, value, true)
-        ) {
-            value.data
-        } else {
-            Color.BLACK
-        }
-    }
-
-    private fun resolveAccentColor(): Int {
-        val value = TypedValue()
-        return if (
-            container.context.theme.resolveAttribute(android.R.attr.colorAccent, value, true)
-        ) {
-            value.data
-        } else {
-            Color.WHITE
-        }
-    }
-
-    private fun dpToPx(dp: Int): Int =
-        (dp * container.resources.displayMetrics.density).toInt()
 
     private companion object {
-        const val SHOW_DELAY_MS = 120L
-        const val MAX_COVER_MS = 700L
-        const val COVER_FADE_MS = 120L
-        const val PROGRESS_FINISH_MS = 120L
-        const val PROGRESS_HEIGHT_DP = 2
-        const val MIN_PROGRESS_SCALE = 0.02f
-        const val PROGRESS_START_SCALE = 0.18f
+        const val REVEAL_DURATION_MS = 450L
+        const val MAX_BLUR_RADIUS = 18f
+        const val REVEAL_START_SCALE = 1.012f
     }
 }
