@@ -15,10 +15,12 @@ async function requestConfig(){try{
  const response=await browser.runtime.sendNativeMessage("browser",{type:"sandfox-get-config"});
  if(response?.type==="sandfox-config") await apply(response.config);
 }catch(_){} }
+function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function connect(){try{
  nativePort=browser.runtime.connectNative("browser");
  nativePort.onMessage.addListener(m=>{if(m?.type==="sandfox-config")apply(m.config)});
  nativePort.onDisconnect.addListener(()=>{nativePort=null;setTimeout(connect,1000)})
 }catch(_){nativePort=null;setTimeout(connect,2000)}}
 browser.runtime.onMessage.addListener(m=>m?.type==="sandfox-get-config"?Promise.resolve({config:state}):undefined);
-load().then(async()=>{await requestConfig();connect()});
+async function start(){await load();connect();for(let i=0;i<6;i++){const before=JSON.stringify(state);await requestConfig();if(JSON.stringify(state)!==before)return;if(i<5)await delay(250)}}
+start();
