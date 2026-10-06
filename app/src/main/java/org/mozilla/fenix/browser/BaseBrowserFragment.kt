@@ -1935,11 +1935,6 @@ abstract class BaseBrowserFragment :
     }
 
     @VisibleForTesting
-    private fun isInitialPageForTransition(session: SessionState): Boolean {
-        val url = session.content.url
-        return customTabSessionId != null || url.isEmpty() || url == "about:blank"
-    }
-
     internal fun observeTabSelection(
         store: BrowserStore,
         isCustomTabSession: Boolean,
@@ -1957,11 +1952,7 @@ abstract class BaseBrowserFragment :
                     dismissDownloadDialogs()
                     dismissRenameDialog()
                     handleTabSelected(it, isCustomTabSession)
-                    pageTransitionController?.bind(
-                        session = it.engineState.engineSession,
-                        showInitialCover = isInitialPageForTransition(it),
-                        isLoading = it.content.loading,
-                    )
+                    pageTransitionController?.bind(session = it.engineState.engineSession)
                 }
         }
     }
