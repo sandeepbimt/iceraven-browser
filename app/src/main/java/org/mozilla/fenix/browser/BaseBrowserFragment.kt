@@ -412,7 +412,7 @@ abstract class BaseBrowserFragment :
                     val hasPreviousWebPage =
                         !newTab &&
                             !currentUrl.isNullOrBlank() &&
-                            currentUrl != ABOUT_HOME_URL &&
+                            currentUrl != "about:home" &&
                             currentUrl != "about:blank"
                     pageTransitionController?.prepareNavigationTransition(
                         hasPreviousPage = hasPreviousWebPage,

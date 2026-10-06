@@ -40,11 +40,11 @@ internal object StandaloneWebAppIconStore {
                 scaled.compress(Bitmap.CompressFormat.PNG, 100, output)
             }
 
+            val splashColor = sampleColor(scaled)
+
             if (scaled !== square) scaled.recycle()
             if (square !== bitmap) square.recycle()
             bitmap.recycle()
-
-            val splashColor = sampleColor(scaled)
 
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
