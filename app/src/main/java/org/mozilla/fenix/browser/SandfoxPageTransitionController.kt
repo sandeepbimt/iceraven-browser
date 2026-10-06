@@ -14,7 +14,6 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.LifecycleOwner
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.EngineSession
-import org.mozilla.fenix.R
 
 /**
  * Non-blocking page handoff that reveals the actual rendered page from a short blur.
@@ -33,6 +32,7 @@ internal class SandfoxPageTransitionController(
     private var transitionAnimator: ValueAnimator? = null
     private var generation = 0L
     private var lastLoading = false
+    private var captureGeneration: Long? = null
 
     private val observer = object : EngineSession.Observer {
         override fun onLoadingStateChange(loading: Boolean) {
@@ -45,8 +45,13 @@ internal class SandfoxPageTransitionController(
 
         override fun onFirstContentfulPaint() {
             val currentGeneration = generation
+            if (captureGeneration == currentGeneration) return
+            captureGeneration = currentGeneration
             engineView.captureThumbnail { bitmap ->
-                if (bitmap == null || currentGeneration != generation) return@captureThumbnail
+                if (bitmap == null || currentGeneration != generation) {
+                    if (currentGeneration == generation) captureGeneration = null
+                    return@captureThumbnail
+                }
                 container.post {
                     if (currentGeneration == generation) showReveal(bitmap)
                 }
@@ -66,7 +71,8 @@ internal class SandfoxPageTransitionController(
         this.session?.unregister(observer)
         this.session = session
         generation++
-        lastLoading = isLoading
+        lastLoading = false
+        captureGeneration = null
         session?.register(observer, lifecycleOwner, autoPause = false)
     }
 
@@ -134,7 +140,9 @@ internal class SandfoxPageTransitionController(
 
     private fun removeTransition() {
         val view = transitionView ?: return
-        view.setRenderEffect(null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            view.setRenderEffect(null)
+        }
         view.setImageDrawable(null)
         (view.parent as? ViewGroup)?.removeView(view)
         transitionView = null
