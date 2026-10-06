@@ -78,14 +78,16 @@ object GeckoProvider {
             )
             .accept(
                 { extension ->
-                    geckoRuntime.getWebExtensionController()
-                        .enable(extension, WebExtensionController.EnableSource.APP)
-                        .accept(
-                            {},
-                            { error ->
-                                error?.let(context.components.analytics.crashReporter::submitCaughtException)
-                            },
-                        )
+                    extension?.let {
+                        geckoRuntime.getWebExtensionController()
+                            .enable(it, WebExtensionController.EnableSource.APP)
+                            .accept(
+                                {},
+                                { error ->
+                                    error?.let(context.components.analytics.crashReporter::submitCaughtException)
+                                },
+                            )
+                    }
                 },
                 { error -> error?.let(context.components.analytics.crashReporter::submitCaughtException) },
             )
