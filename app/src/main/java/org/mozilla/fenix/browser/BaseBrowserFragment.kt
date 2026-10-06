@@ -1883,6 +1883,10 @@ abstract class BaseBrowserFragment :
         reinitializeEngineView()
     }
 
+    internal fun startSandfoxPwaLaunchTransition() {
+        pageTransitionController?.startPwaLaunchTransition()
+    }
+
     private fun removeBottomToolbarDivider() {
         browserToolbar.layout.elevation = 0.0f
     }
@@ -2125,7 +2129,11 @@ abstract class BaseBrowserFragment :
             return true
         }
 
+        pageTransitionController?.prepareNavigationTransition()
         val handledBySession = sessionFeature.onBackPressed()
+        if (!handledBySession) {
+            pageTransitionController?.cancelNavigationTransition()
+        }
         IceravenDebugTrace.log(
             "PWA_BASE_BACK_SESSION",
             "handled" to handledBySession,
@@ -2142,7 +2150,12 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     override fun onForwardPressed(): Boolean {
-        return sessionFeature.onForwardPressed()
+        pageTransitionController?.prepareNavigationTransition()
+        val handled = sessionFeature.onForwardPressed()
+        if (!handled) {
+            pageTransitionController?.cancelNavigationTransition()
+        }
+        return handled
     }
 
     /** Forwards activity results to the [ActivityResultHandler] features. */

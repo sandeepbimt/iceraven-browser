@@ -99,6 +99,10 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
             customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP ||
                 customTabSession?.config?.externalAppType == ExternalAppType.TRUSTED_WEB_ACTIVITY
 
+        if (customTabSession?.config?.externalAppType == ExternalAppType.PROGRESSIVE_WEB_APP) {
+            startSandfoxPwaLaunchTransition()
+        }
+
         // A manifest-less standalone web shortcut has no trusted scope for Gecko's
         // WebAppHideToolbarFeature, so keep its browser chrome hidden explicitly.
         if (isPwaTabOrTwaTab && manifest == null) {
