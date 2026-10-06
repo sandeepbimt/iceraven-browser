@@ -3,9 +3,19 @@
   "name": "Sandfox Native Adblock Bridge",
   "version": "1.0.0",
   "description": "Sandfox V1-A Brave adblock-rust network blocker.",
-  "permissions": ["<all_urls>", "webRequest", "webRequestBlocking", "storage"],
-  "background": { "page": "background.html" },
+  "permissions": [
+    "<all_urls>",
+    "webRequest",
+    "webRequestBlocking",
+    "storage"
+  ],
+  "background": {
+    "page": "background.html"
+  },
   "browser_specific_settings": {
-    "gecko": { "id": "sandfox-adblock@sandfox.browser" }
-  }
+    "gecko": {
+      "id": "sandfox-adblock@sandfox.browser"
+    }
+  },
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
 }
