@@ -63,14 +63,14 @@ internal class SandfoxPageTransitionController(
             generation++
             readyGeneration = null
             cancelTransition()
-            engineView.alpha = 1f
+            engineView.asView().alpha = 1f
         }
     }
 
     fun bind(session: EngineSession?) {
         if (this.session === session) return
         cancelTransition()
-        engineView.alpha = 1f
+        engineView.asView().alpha = 1f
         this.session?.unregister(observer)
         this.session = session
         generation++
@@ -88,7 +88,7 @@ internal class SandfoxPageTransitionController(
             scaleX = REVEAL_START_SCALE
             scaleY = REVEAL_START_SCALE
         }
-        engineView.alpha = 0f
+        engineView.asView().alpha = 0f
         container.addView(image, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         transitionView = image
 
@@ -138,7 +138,7 @@ internal class SandfoxPageTransitionController(
             addUpdateListener { value ->
                 val alpha = value.animatedValue as Float
                 image.alpha = alpha
-                engineView.alpha = 1f - alpha
+                engineView.asView().alpha = 1f - alpha
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val radius = HOLD_BLUR_RADIUS * alpha
                     image.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
@@ -151,7 +151,7 @@ internal class SandfoxPageTransitionController(
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     transitionAnimator = null
-                    engineView.alpha = 1f
+                    engineView.asView().alpha = 1f
                     removeTransition()
                 }
             })
@@ -178,7 +178,7 @@ internal class SandfoxPageTransitionController(
         generation++
         readyGeneration = null
         cancelTransition()
-        engineView.alpha = 1f
+        engineView.asView().alpha = 1f
         session?.unregister(observer)
         session = null
     }
