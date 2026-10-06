@@ -64,7 +64,7 @@ internal class SandfoxPageTransitionController(
         }
     }
 
-    fun bind(session: EngineSession?, showInitialCover: Boolean, isLoading: Boolean) {
+    fun bind(session: EngineSession?) {
         if (this.session === session) return
 
         cancelTransition()
