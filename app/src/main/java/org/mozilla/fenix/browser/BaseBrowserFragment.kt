@@ -259,6 +259,7 @@ abstract class BaseBrowserFragment :
     AccessibilityManager.AccessibilityStateChangeListener {
 
     private var _binding: FragmentBrowserBinding? = null
+    private var pageTransitionController: SandfoxPageTransitionController? = null
     internal val binding
         get() = _binding!!
 
@@ -397,6 +398,7 @@ abstract class BaseBrowserFragment :
         )
 
         _binding = FragmentBrowserBinding.inflate(inflater, container, false)
+        pageTransitionController = SandfoxPageTransitionController(binding.browserLayout, viewLifecycleOwner)
 
         val originalContext = ActivityContextWrapper.getOriginalContext(requireActivity())
         binding.engineView.setActivityContext(originalContext)
@@ -1933,6 +1935,11 @@ abstract class BaseBrowserFragment :
     }
 
     @VisibleForTesting
+    private fun isInitialPageForTransition(session: SessionState): Boolean {
+        val url = session.content.url
+        return customTabSessionId != null || url.isEmpty() || url == "about:blank"
+    }
+
     internal fun observeTabSelection(
         store: BrowserStore,
         isCustomTabSession: Boolean,
@@ -2438,6 +2445,8 @@ abstract class BaseBrowserFragment :
         // https://github.com/mozilla-mobile/android-components/issues/7960
         breadcrumb(message = "onDestroyView()")
 
+        pageTransitionController?.destroy()
+        pageTransitionController = null
         binding.engineView.setActivityContext(null)
         requireContext().accessibilityManager.removeAccessibilityStateChangeListener(this)
 
