@@ -36,7 +36,6 @@ class SandfoxPageTransitionController(
     private var navigationArmed = false
     private var transitionStarted = false
     private var backNavigation = false
-    private var readyCaptureRequested = false
     private var firstDrawObserved = false
     private var drawCallback: Runnable? = null
     private var pendingLocationUrl: String? = null
@@ -101,21 +100,20 @@ class SandfoxPageTransitionController(
         if (!navigationArmed || transitionStarted || destroyed) return
 
         transitionStarted = true
-        readyCaptureRequested = false
         firstDrawObserved = false
         armFirstDrawObserver()
         scheduleSafetyRelease()
 
         // Capture only after the destination has produced its first contentful view. This is
         // the first point at which a destination-only visual layer is allowed to exist.
-        captureDestinationSnapshot(generation, forReveal = false)
+        captureDestinationSnapshot(generation)
     }
 
     private fun onFirstDraw() {
         if (!transitionStarted || destroyed) return
 
         firstDrawObserved = true
-        maybeRequestReadyCapture()
+        revealNow(generation)
     }
 
     override fun onPaintStatusReset() {
@@ -124,8 +122,7 @@ class SandfoxPageTransitionController(
         if (transitionStarted) {
             cancelVisualOnly()
             transitionStarted = false
-            readyCaptureRequested = false
-            firstDrawObserved = false
+                firstDrawObserved = false
             removeFirstDrawObserver()
         }
     }
@@ -147,11 +144,10 @@ class SandfoxPageTransitionController(
         firstDrawObserved = false
         backNavigation = back
         pendingLocationUrl = locationUrl
-        readyCaptureRequested = false
         cancelVisualOnly()
     }
 
-    private fun captureDestinationSnapshot(captureGeneration: Long, forReveal: Boolean) {
+    private fun captureDestinationSnapshot(captureGeneration: Long) {
         if (destroyed || captureGeneration != generation || !transitionStarted) return
 
         engineView.captureThumbnail { bitmap ->
@@ -161,35 +157,16 @@ class SandfoxPageTransitionController(
                 }
 
                 if (bitmap == null) {
-                    if (forReveal) {
-                        revealNow(captureGeneration)
-                    }
                     return@post
                 }
 
                 overlay.setImageBitmap(bitmap)
                 updateOverlayBounds()
-
-                if (!forReveal) {
-                    overlay.alpha = 1f
-                    applyBlur(BLUR_RADIUS)
-                    overlay.visibility = View.VISIBLE
-                    maybeRequestReadyCapture()
-                } else {
-                    // Visible-page readiness is the end point of the transition. Do not add
-                    // an animation-duration delay after the destination is ready.
-                    revealNow(captureGeneration)
-                }
+                overlay.alpha = 1f
+                applyBlur(BLUR_RADIUS)
+                overlay.visibility = View.VISIBLE
             }
         }
-    }
-
-    private fun maybeRequestReadyCapture() {
-        if (!transitionStarted || readyCaptureRequested || destroyed) return
-        if (!firstDrawObserved) return
-
-        readyCaptureRequested = true
-        captureDestinationSnapshot(generation, forReveal = true)
     }
 
     private fun scheduleSafetyRelease() {
@@ -220,7 +197,6 @@ class SandfoxPageTransitionController(
         overlay.setImageBitmap(null)
         navigationArmed = false
         transitionStarted = false
-        readyCaptureRequested = false
         pendingLocationUrl = null
     }
 
@@ -228,7 +204,6 @@ class SandfoxPageTransitionController(
         generation += 1
         navigationArmed = false
         transitionStarted = false
-        readyCaptureRequested = false
         firstDrawObserved = false
         pendingLocationUrl = null
         cancelVisualOnly()
