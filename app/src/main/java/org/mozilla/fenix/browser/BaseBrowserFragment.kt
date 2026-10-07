@@ -1451,9 +1451,11 @@ abstract class BaseBrowserFragment :
                     currentTab.engineState.engineSession
                 }
                 .collect { currentTab ->
-                    pageTransitionController?.attach(currentTab.engineState.engineSession)
-                    if (currentTab.content.loading) {
-                        pageTransitionController?.primeForExistingLoad()
+                    currentTab.engineState.engineSession?.let { engineSession ->
+                        pageTransitionController?.attach(engineSession)
+                        if (currentTab.content.loading) {
+                            pageTransitionController?.primeForExistingLoad()
+                        }
                     }
                 }
         }
