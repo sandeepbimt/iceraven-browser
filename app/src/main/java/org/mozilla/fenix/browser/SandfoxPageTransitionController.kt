@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import org.mozilla.geckoview.GeckoView
 import android.widget.ImageView
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineView
@@ -34,9 +35,10 @@ class SandfoxPageTransitionController(
     private var generation = 0L
     private var navigationArmed = false
     private var transitionStarted = false
-    private var loading = false
     private var backNavigation = false
     private var readyCaptureRequested = false
+    private var firstDrawObserved = false
+    private var drawCallback: Runnable? = null
     private var pendingLocationUrl: String? = null
     private var safetyRelease: Runnable? = null
     private var destroyed = false
@@ -86,12 +88,8 @@ class SandfoxPageTransitionController(
     }
 
     override fun onLoadingStateChange(loading: Boolean) {
-        this.loading = loading
         if (loading && !navigationArmed) {
             armNavigation(back = false)
-        }
-        if (!loading) {
-            maybeRequestReadyCapture()
         }
     }
 
@@ -104,11 +102,20 @@ class SandfoxPageTransitionController(
 
         transitionStarted = true
         readyCaptureRequested = false
+        firstDrawObserved = false
+        armFirstDrawObserver()
         scheduleSafetyRelease()
 
         // Capture only after the destination has produced its first contentful view. This is
         // the first point at which a destination-only visual layer is allowed to exist.
         captureDestinationSnapshot(generation, forReveal = false)
+    }
+
+    private fun onFirstDraw() {
+        if (!transitionStarted || destroyed) return
+
+        firstDrawObserved = true
+        maybeRequestReadyCapture()
     }
 
     override fun onPaintStatusReset() {
@@ -118,6 +125,8 @@ class SandfoxPageTransitionController(
             cancelVisualOnly()
             transitionStarted = false
             readyCaptureRequested = false
+            firstDrawObserved = false
+            removeFirstDrawObserver()
         }
     }
 
@@ -135,7 +144,7 @@ class SandfoxPageTransitionController(
         generation += 1
         navigationArmed = true
         transitionStarted = false
-        loading = true
+        firstDrawObserved = false
         backNavigation = back
         pendingLocationUrl = locationUrl
         readyCaptureRequested = false
@@ -177,7 +186,7 @@ class SandfoxPageTransitionController(
 
     private fun maybeRequestReadyCapture() {
         if (!transitionStarted || readyCaptureRequested || destroyed) return
-        if (loading) return
+        if (!firstDrawObserved) return
 
         readyCaptureRequested = true
         captureDestinationSnapshot(generation, forReveal = true)
@@ -204,6 +213,7 @@ class SandfoxPageTransitionController(
         if (destroyed || captureGeneration != generation) return
         safetyRelease?.let(mainHandler::removeCallbacks)
         safetyRelease = null
+        removeFirstDrawObserver()
         overlay.alpha = 0f
         applyBlur(0f)
         overlay.visibility = View.GONE
@@ -219,6 +229,7 @@ class SandfoxPageTransitionController(
         navigationArmed = false
         transitionStarted = false
         readyCaptureRequested = false
+        firstDrawObserved = false
         pendingLocationUrl = null
         cancelVisualOnly()
     }
@@ -226,10 +237,38 @@ class SandfoxPageTransitionController(
     private fun cancelVisualOnly() {
         safetyRelease?.let(mainHandler::removeCallbacks)
         safetyRelease = null
+        removeFirstDrawObserver()
         overlay.alpha = 0f
         applyBlur(0f)
         overlay.visibility = View.GONE
         overlay.setImageBitmap(null)
+    }
+
+    private fun armFirstDrawObserver() {
+        removeFirstDrawObserver()
+
+        val geckoView = findGeckoView(engineViewAndroid) ?: return
+        val geckoSession = geckoView.session ?: return
+
+        val callback = Runnable { onFirstDraw() }
+        drawCallback = callback
+        geckoSession.compositorController.addDrawCallback(callback)
+    }
+
+    private fun removeFirstDrawObserver() {
+        val callback = drawCallback ?: return
+        findGeckoView(engineViewAndroid)?.session?.compositorController?.removeDrawCallback(callback)
+        drawCallback = null
+    }
+
+    private fun findGeckoView(view: View): GeckoView? {
+        if (view is GeckoView) return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                findGeckoView(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun applyBlur(radius: Float) {
