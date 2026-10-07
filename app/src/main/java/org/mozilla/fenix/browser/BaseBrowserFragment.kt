@@ -1442,6 +1442,22 @@ abstract class BaseBrowserFragment :
                 }
             }
 
+        store.flowScoped(viewLifecycleOwner, Dispatchers.Main) { flow ->
+            flow
+                .mapNotNull { state ->
+                    state.findTabOrCustomTabOrSelectedTab(customTabSessionId)
+                }
+                .distinctUntilChangedBy { currentTab ->
+                    currentTab.engineState.engineSession
+                }
+                .collect { currentTab ->
+                    pageTransitionController?.attach(currentTab.engineState.engineSession)
+                    if (currentTab.content.loading) {
+                        pageTransitionController?.primeForExistingLoad()
+                    }
+                }
+        }
+
         initializeMicrosurveyFeature(context)
     }
 
