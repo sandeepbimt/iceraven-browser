@@ -45,7 +45,7 @@ open class ExternalAppBrowserActivity : HomeActivity() {
 
     internal fun showPwaLaunchSplashIfNeeded() {
         val session = getExternalTab() as? mozilla.components.browser.state.state.CustomTabSessionState ?: return
-        if (session.config?.externalAppType != mozilla.components.browser.state.state.ExternalAppType.PROGRESSIVE_WEB_APP) return
+        if (session.config.externalAppType != mozilla.components.browser.state.state.ExternalAppType.PROGRESSIVE_WEB_APP) return
         if (pwaLaunchSplash != null) return
 
         val root = findViewById<ViewGroup>(android.R.id.content) ?: return
