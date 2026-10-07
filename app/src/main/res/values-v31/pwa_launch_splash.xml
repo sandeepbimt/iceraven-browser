@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="PwaLaunchSplashTheme" parent="NormalTheme">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/pwa_launch_splash_transparent_icon</item>
+        <item name="android:windowSplashScreenBackground">@color/fx_mobile_surface</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">1</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">default</item>
+    </style>
+</resources>
