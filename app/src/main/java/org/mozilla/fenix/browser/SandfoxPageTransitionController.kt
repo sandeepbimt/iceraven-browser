@@ -102,8 +102,6 @@ class SandfoxPageTransitionController(
 
         transitionStarted = true
         readyCaptureRequested = false
-        firstDrawObserved = false
-        armFirstDrawObserver()
         scheduleSafetyRelease()
 
         // Capture only after the destination has produced its first contentful view. This is
@@ -112,10 +110,12 @@ class SandfoxPageTransitionController(
     }
 
     private fun onFirstDraw() {
-        if (!transitionStarted || destroyed) return
+        if (destroyed || !navigationArmed) return
 
         firstDrawObserved = true
-        maybeRequestReadyCapture()
+        if (transitionStarted) {
+            maybeRequestReadyCapture()
+        }
     }
 
     override fun onPaintStatusReset() {
@@ -149,6 +149,7 @@ class SandfoxPageTransitionController(
         pendingLocationUrl = locationUrl
         readyCaptureRequested = false
         cancelVisualOnly()
+        armFirstDrawObserver()
     }
 
     private fun captureDestinationSnapshot(captureGeneration: Long, forReveal: Boolean) {
@@ -170,7 +171,7 @@ class SandfoxPageTransitionController(
                 overlay.setImageBitmap(bitmap)
                 updateOverlayBounds()
 
-                if (!forReveal) {
+                        if (!forReveal) {
                     overlay.alpha = 1f
                     applyBlur(BLUR_RADIUS)
                     overlay.visibility = View.VISIBLE
