@@ -224,8 +224,6 @@ class SandfoxPageTransitionController(
     }
 
     private fun cancelVisualOnly() {
-        revealAnimator?.cancel()
-        revealAnimator = null
         safetyRelease?.let(mainHandler::removeCallbacks)
         safetyRelease = null
         overlay.alpha = 0f
