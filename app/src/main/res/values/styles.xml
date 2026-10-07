@@ -11,6 +11,15 @@
         <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">default</item>
     </style>
 
+    <style name="PwaLaunchSplashTheme" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/pwa_launch_splash_transparent_icon</item>
+        <item name="windowSplashScreenBackground">@color/fx_mobile_surface</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="postSplashScreenTheme">@style/NormalTheme</item>
+        <item name="windowSplashScreenAnimationDuration">1</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">default</item>
+    </style>
+
     <style name="NormalThemeBase" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="preferenceTheme">@style/PreferenceTheme</item>
         <item name="materialTimePickerTheme">@style/Normal.MaterialTimePicker</item>

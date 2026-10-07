@@ -1,22 +1,24 @@
 package org.mozilla.fenix.customtabs
 
 import android.animation.Animator
-import android.animation.PropertyValuesHolder
+import android.animation.AnimatorSet
+import android.animation.DecelerateInterpolator
 import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Context
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.StandaloneWebAppIconStore
 import kotlin.math.max
 import kotlin.math.min
@@ -31,11 +33,29 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
     private val glowOne = View(context)
     private val glowTwo = View(context)
     private val glowThree = View(context)
+    private val ambientView =
+        ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isClickable = false
+            isFocusable = false
+            alpha = 0f
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setRenderEffect(
+                    RenderEffect.createBlurEffect(
+                        dp(34).toFloat(),
+                        dp(34).toFloat(),
+                        Shader.TileMode.CLAMP,
+                    ),
+                )
+            }
+        }
+
     private val iconView =
         ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             isClickable = false
             isFocusable = false
+            alpha = 0f
         }
 
     private var primary = Color.rgb(88, 88, 98)
@@ -49,18 +69,15 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
         addView(glowOne, circleParams())
         addView(glowTwo, circleParams())
         addView(glowThree, circleParams())
+        addView(ambientView, LayoutParams(dp(120), dp(120), Gravity.CENTER))
         addView(iconView, LayoutParams(dp(120), dp(120), Gravity.CENTER))
         applyPalette()
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        startMotion()
     }
 
     override fun onDetachedFromWindow() {
         animators.forEach { it.cancel() }
         animators.clear()
+        ambientView.setImageDrawable(null)
         iconView.setImageDrawable(null)
         super.onDetachedFromWindow()
     }
@@ -76,6 +93,14 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
                     gravity = Gravity.CENTER
                 }
         }
+        val ambientSize = (min(w, h) * 0.34f).toInt().coerceAtLeast(dp(140))
+        ambientView.layoutParams =
+            (ambientView.layoutParams as LayoutParams).apply {
+                width = ambientSize
+                height = ambientSize
+                gravity = Gravity.CENTER
+            }
+
         val iconSize = (min(w, h) * 0.22f).toInt().coerceAtLeast(dp(88))
         iconView.layoutParams =
             (iconView.layoutParams as LayoutParams).apply {
@@ -91,11 +116,15 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
     }
 
     fun setIcon(bitmap: Bitmap?) {
+        ambientView.setImageBitmap(bitmap)
         iconView.setImageBitmap(bitmap)
+        iconView.alpha = if (bitmap == null) 0f else 1f
+
         val colors = extractColors(bitmap)
         primary = colors[0]
         secondary = colors[1]
         applyPalette()
+        startMotion()
     }
 
     private fun applyPalette() {
@@ -125,10 +154,41 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
     private fun startMotion() {
         animators.forEach { it.cancel() }
         animators.clear()
-        animators += repeatingScale(glowOne, 0.82f, 1.08f, 1500L)
-        animators += repeatingScale(glowTwo, 0.88f, 1.12f, 1750L)
-        animators += repeatingScale(glowThree, 0.84f, 1.06f, 1950L)
-        animators += repeatingScale(iconView, 0.975f, 1.025f, 1100L)
+
+        val glowOneAnimator = repeatingScale(glowOne, 0.82f, 1.10f, 1500L)
+        val glowTwoAnimator = repeatingScale(glowTwo, 0.88f, 1.14f, 1750L)
+        val glowThreeAnimator = repeatingScale(glowThree, 0.84f, 1.08f, 1950L)
+
+        val ambientReveal =
+            AnimatorSet().apply {
+                playTogether(
+                    ObjectAnimator.ofFloat(ambientView, View.ALPHA, 0f, 0.86f),
+                    ObjectAnimator.ofFloat(ambientView, View.SCALE_X, 0.72f, 5.2f),
+                    ObjectAnimator.ofFloat(ambientView, View.SCALE_Y, 0.72f, 5.2f),
+                )
+                duration = 1050L
+                interpolator = DecelerateInterpolator(1.8f)
+            }
+
+        val iconExpansion =
+            AnimatorSet().apply {
+                playTogether(
+                    ObjectAnimator.ofFloat(iconView, View.SCALE_X, 1f, 4.8f),
+                    ObjectAnimator.ofFloat(iconView, View.SCALE_Y, 1f, 4.8f),
+                    ObjectAnimator.ofFloat(iconView, View.ALPHA, 1f, 0f),
+                )
+                duration = 760L
+                interpolator = DecelerateInterpolator(2f)
+            }
+
+        animators += glowOneAnimator
+        animators += glowTwoAnimator
+        animators += glowThreeAnimator
+        animators += ambientReveal
+        if (iconView.drawable != null) {
+            animators += iconExpansion
+        }
+
         animators.forEach { it.start() }
     }
 
@@ -157,7 +217,6 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
                     StandaloneWebAppIconStore.get(context, url)
                         ?.takeIf { it.isFile }
                         ?.let { decodeIconFile(it.absolutePath) }
-                        ?: drawableToBitmap(ContextCompat.getDrawable(context, R.mipmap.ic_launcher))
                 }.getOrNull()
             }
 
@@ -175,16 +234,6 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
             return BitmapFactory.decodeFile(path, options)
-        }
-
-        private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
-            drawable ?: return null
-            return runCatching {
-                Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888).also { bitmap ->
-                    drawable.setBounds(0, 0, 192, 192)
-                    drawable.draw(android.graphics.Canvas(bitmap))
-                }
-            }.getOrNull()
         }
 
         private fun extractColors(bitmap: Bitmap?): IntArray {
