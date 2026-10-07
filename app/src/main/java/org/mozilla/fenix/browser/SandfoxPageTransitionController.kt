@@ -401,7 +401,7 @@ internal class SandfoxPageTransitionController(
         return difference.toFloat() / first.size
     }
 
-    private fun maybeRevealDestination() {
+    private fun revealDestination(transitionGeneration: Long) {
         if (
             transitionGeneration != generation ||
             revealStarted ||
