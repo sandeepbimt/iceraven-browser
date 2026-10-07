@@ -2,7 +2,6 @@ package org.mozilla.fenix.customtabs
 
 import android.animation.Animator
 import android.animation.AnimatorSet
-import android.animation.DecelerateInterpolator
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.content.Context
