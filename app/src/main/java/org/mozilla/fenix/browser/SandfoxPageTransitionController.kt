@@ -81,7 +81,7 @@ class SandfoxPageTransitionController(
         overlay.visibility = View.GONE
     }
 
-    override fun onLocationChange(url: String) {
+    override fun onLocationChange(url: String, hasUserGesture: Boolean) {
         if (navigationArmed && pendingLocationUrl == null) {
             pendingLocationUrl = url
             return
