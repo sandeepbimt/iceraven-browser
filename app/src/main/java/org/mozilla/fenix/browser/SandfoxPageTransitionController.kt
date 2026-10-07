@@ -1,15 +1,12 @@
 package org.mozilla.fenix.browser
 
-import android.animation.ValueAnimator
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineView
@@ -41,9 +38,7 @@ class SandfoxPageTransitionController(
     private var backNavigation = false
     private var readyCaptureRequested = false
     private var pendingLocationUrl: String? = null
-    private var startUptime = 0L
     private var safetyRelease: Runnable? = null
-    private var revealAnimator: ValueAnimator? = null
     private var destroyed = false
 
     init {
@@ -108,7 +103,6 @@ class SandfoxPageTransitionController(
         if (!navigationArmed || transitionStarted || destroyed) return
 
         transitionStarted = true
-        startUptime = SystemClock.uptimeMillis()
         readyCaptureRequested = false
         scheduleSafetyRelease()
 
@@ -173,7 +167,9 @@ class SandfoxPageTransitionController(
                     overlay.visibility = View.VISIBLE
                     maybeRequestReadyCapture()
                 } else {
-                    reveal(captureGeneration)
+                    // Visible-page readiness is the end point of the transition. Do not add
+                    // an animation-duration delay after the destination is ready.
+                    revealNow(captureGeneration)
                 }
             }
         }
@@ -199,38 +195,6 @@ class SandfoxPageTransitionController(
         mainHandler.postDelayed(runnable, delay)
     }
 
-    private fun reveal(captureGeneration: Long) {
-        if (destroyed || captureGeneration != generation || !transitionStarted) return
-
-        val elapsed = SystemClock.uptimeMillis() - startUptime
-        val remaining = if (backNavigation) BACK_MAX_DURATION_MS - elapsed else REVEAL_DURATION_MS
-        if (remaining <= 0L) {
-            revealNow(captureGeneration)
-            return
-        }
-
-        revealAnimator?.cancel()
-        val duration = if (backNavigation) minOf(REVEAL_DURATION_MS, remaining) else REVEAL_DURATION_MS
-        revealAnimator = ValueAnimator.ofFloat(1f, 0f).apply {
-            this.duration = duration
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { animator ->
-                if (destroyed || captureGeneration != generation) return@addUpdateListener
-                val value = animator.animatedValue as Float
-                overlay.alpha = value
-                applyBlur(BLUR_RADIUS * value)
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    if (captureGeneration == generation && !destroyed) {
-                        finishTransition(captureGeneration)
-                    }
-                }
-            })
-            start()
-        }
-    }
-
     private fun revealNow(captureGeneration: Long) {
         if (destroyed || captureGeneration != generation || !transitionStarted) return
         finishTransition(captureGeneration)
@@ -238,8 +202,6 @@ class SandfoxPageTransitionController(
 
     private fun finishTransition(captureGeneration: Long) {
         if (destroyed || captureGeneration != generation) return
-        revealAnimator?.cancel()
-        revealAnimator = null
         safetyRelease?.let(mainHandler::removeCallbacks)
         safetyRelease = null
         overlay.alpha = 0f
@@ -311,7 +273,6 @@ class SandfoxPageTransitionController(
 
     private companion object {
         const val BLUR_RADIUS = 18f
-        const val REVEAL_DURATION_MS = 160L
         const val BACK_MAX_DURATION_MS = 100L
         const val SAFETY_RELEASE_MS = 750L
     }
