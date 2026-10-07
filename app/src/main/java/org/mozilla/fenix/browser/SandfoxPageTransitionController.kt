@@ -102,8 +102,9 @@ class SandfoxPageTransitionController(
 
         transitionStarted = true
         readyCaptureRequested = false
-        firstDrawObserved = false
-        armFirstDrawObserver()
+        if (drawCallback == null) {
+            armFirstDrawObserver()
+        }
         scheduleSafetyRelease()
 
         // Capture only after the destination has produced its first contentful view. This is
@@ -112,22 +113,24 @@ class SandfoxPageTransitionController(
     }
 
     private fun onFirstDraw() {
-        if (!transitionStarted || destroyed) return
+        if (destroyed || !navigationArmed) return
 
         firstDrawObserved = true
-        maybeRequestReadyCapture()
+        if (transitionStarted) {
+            maybeRequestReadyCapture()
+        }
     }
 
     override fun onPaintStatusReset() {
         // The rendered destination is no longer valid. Drop any visual state and wait for the
         // next first-contentful-paint signal for this navigation generation.
-        if (transitionStarted) {
-            cancelVisualOnly()
-            transitionStarted = false
-            readyCaptureRequested = false
-            firstDrawObserved = false
-            removeFirstDrawObserver()
-        }
+        if (!navigationArmed) return
+
+        cancelVisualOnly()
+        transitionStarted = false
+        readyCaptureRequested = false
+        firstDrawObserved = false
+        armFirstDrawObserver()
     }
 
     override fun onCrash() {
