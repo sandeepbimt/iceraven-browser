@@ -6,6 +6,7 @@ package org.mozilla.fenix.customtabs
 
 import android.content.Context
 import android.view.View
+import android.view.ViewTreeObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
 import kotlinx.coroutines.Dispatchers
@@ -49,12 +50,14 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
 
     private val customTabColorsBinding = ViewBoundFeatureWrapper<CustomTabColorsBinding>()
     private val windowFeature = ViewBoundFeatureWrapper<CustomTabWindowFeature>()
+    private var pwaTransitionPreDrawListener: ViewTreeObserver.OnPreDrawListener? = null
 
     @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
         super.initializeUI(view, tab)
 
         val customTabSessionId = customTabSessionId ?: return
+        installPwaTransitionHandoffObserver()
         val activity = requireActivity()
         val components = activity.components
 
@@ -174,6 +177,28 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
         }
     }
 
+    private fun installPwaTransitionHandoffObserver() {
+        val activity = requireActivity() as? ExternalAppBrowserActivity ?: return
+        val overlay = binding.pageTransitionOverlay
+        if (overlay.visibility == View.VISIBLE) {
+            activity.hidePwaLaunchSplash()
+            return
+        }
+
+        val listener = object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (overlay.visibility == View.VISIBLE) {
+                    if (overlay.viewTreeObserver.isAlive) overlay.viewTreeObserver.removeOnPreDrawListener(this)
+                    pwaTransitionPreDrawListener = null
+                    activity.hidePwaLaunchSplash()
+                }
+                return true
+            }
+        }
+        pwaTransitionPreDrawListener = listener
+        overlay.viewTreeObserver.addOnPreDrawListener(listener)
+    }
+
     override fun navToQuickSettingsSheet(tab: SessionState, sitePermissions: SitePermissions?) {
         requireComponents.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
             lifecycleScope.launch {
@@ -245,6 +270,13 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
     }
 
     override fun onDestroyView() {
+        pwaTransitionPreDrawListener?.let { listener ->
+            if (binding.pageTransitionOverlay.viewTreeObserver.isAlive) {
+                binding.pageTransitionOverlay.viewTreeObserver.removeOnPreDrawListener(listener)
+            }
+        }
+        pwaTransitionPreDrawListener = null
+
         IceravenDebugTrace.log(
             "PWA_FRAGMENT_DESTROY_VIEW",
             "sessionId" to customTabSessionId,

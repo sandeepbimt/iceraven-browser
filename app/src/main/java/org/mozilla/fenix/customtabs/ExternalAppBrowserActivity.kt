@@ -7,9 +7,13 @@ package org.mozilla.fenix.customtabs
 import android.app.assist.AssistContent
 import android.os.Bundle
 import android.view.MotionEvent
+import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.store.BrowserStore
@@ -30,6 +34,41 @@ const val EXTRA_IS_SANDBOX_CUSTOM_TAB = "org.mozilla.fenix.customtabs.EXTRA_IS_S
 @Suppress("TooManyFunctions")
 open class ExternalAppBrowserActivity : HomeActivity() {
     private var isFinishedAnimating = false
+    private var pwaLaunchSplash: PwaLaunchSplashView? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        showPwaLaunchSplashIfNeeded()
+    }
+
+    internal fun hidePwaLaunchSplash() {
+        val splash = pwaLaunchSplash ?: return
+        (splash.parent as? ViewGroup)?.removeView(splash)
+        if (pwaLaunchSplash === splash) pwaLaunchSplash = null
+    }
+
+    private fun showPwaLaunchSplashIfNeeded() {
+        val session = getExternalTab() ?: return
+        if (session.config?.externalAppType != mozilla.components.browser.state.state.ExternalAppType.PROGRESSIVE_WEB_APP) return
+
+        val root = findViewById<ViewGroup>(android.R.id.content) ?: return
+        val splash = PwaLaunchSplashView(this)
+        pwaLaunchSplash = splash
+        root.addView(splash, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+
+        val url = session.content.url
+        lifecycleScope.launch(Dispatchers.IO) {
+            val bitmap = PwaLaunchSplashView.loadIcon(applicationContext, url)
+            withContext(Dispatchers.Main) {
+                if (pwaLaunchSplash === splash && !isFinishing && !isDestroyed) {
+                    splash.setIcon(bitmap)
+                } else {
+                    bitmap?.takeIf { !it.isRecycled }?.recycle()
+                }
+            }
+        }
+    }
+
 
     override fun onResume() {
         super.onResume()
@@ -58,6 +97,11 @@ open class ExternalAppBrowserActivity : HomeActivity() {
     }
 
     override fun onDestroy() {
+        pwaLaunchSplash?.let { splash ->
+            (splash.parent as? ViewGroup)?.removeView(splash)
+        }
+        pwaLaunchSplash = null
+
         IceravenDebugTrace.log(
             "PWA_ACTIVITY_DESTROY_ENTER",
             "sessionId" to getExternalTabId(),
