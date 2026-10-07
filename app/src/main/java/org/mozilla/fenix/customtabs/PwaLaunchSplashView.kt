@@ -8,6 +8,7 @@ import android.animation.PropertyValuesHolder
 import android.content.Context
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.view.animation.DecelerateInterpolator
 import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
