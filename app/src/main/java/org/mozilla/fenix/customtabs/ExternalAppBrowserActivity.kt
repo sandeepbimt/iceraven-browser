@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,20 +37,16 @@ open class ExternalAppBrowserActivity : HomeActivity() {
     private var isFinishedAnimating = false
     private var pwaLaunchSplash: PwaLaunchSplashView? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        showPwaLaunchSplashIfNeeded()
-    }
-
     internal fun hidePwaLaunchSplash() {
         val splash = pwaLaunchSplash ?: return
         (splash.parent as? ViewGroup)?.removeView(splash)
         if (pwaLaunchSplash === splash) pwaLaunchSplash = null
     }
 
-    private fun showPwaLaunchSplashIfNeeded() {
-        val session = getExternalTab() ?: return
+    internal fun showPwaLaunchSplashIfNeeded() {
+        val session = getExternalTab() as? mozilla.components.browser.state.state.CustomTabSessionState ?: return
         if (session.config?.externalAppType != mozilla.components.browser.state.state.ExternalAppType.PROGRESSIVE_WEB_APP) return
+        if (pwaLaunchSplash != null) return
 
         val root = findViewById<ViewGroup>(android.R.id.content) ?: return
         val splash = PwaLaunchSplashView(this)

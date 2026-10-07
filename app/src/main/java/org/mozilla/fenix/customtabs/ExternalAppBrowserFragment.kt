@@ -57,8 +57,9 @@ class ExternalAppBrowserFragment : BaseBrowserFragment(), SystemInsetsPaddedFrag
         super.initializeUI(view, tab)
 
         val customTabSessionId = customTabSessionId ?: return
-        installPwaTransitionHandoffObserver()
         val activity = requireActivity()
+        (activity as? ExternalAppBrowserActivity)?.showPwaLaunchSplashIfNeeded()
+        installPwaTransitionHandoffObserver()
         val components = activity.components
 
         val manifest =

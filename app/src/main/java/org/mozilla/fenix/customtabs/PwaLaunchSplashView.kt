@@ -1,7 +1,7 @@
 package org.mozilla.fenix.customtabs
 
 import android.animation.Animator
-import android.animation.AnimatorSet
+import android.animation.PropertyValuesHolder
 import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.menu.StandaloneWebAppIconStore
 import kotlin.math.max
 import kotlin.math.min
 
@@ -132,11 +133,11 @@ internal class PwaLaunchSplashView(context: Context) : FrameLayout(context) {
     }
 
     private fun repeatingScale(view: View, from: Float, to: Float, duration: Long): Animator =
-        AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(view, View.SCALE_X, from, to),
-                ObjectAnimator.ofFloat(view, View.SCALE_Y, from, to),
-            )
+        ObjectAnimator.ofPropertyValuesHolder(
+            view,
+            PropertyValuesHolder.ofFloat(View.SCALE_X, from, to),
+            PropertyValuesHolder.ofFloat(View.SCALE_Y, from, to),
+        ).apply {
             this.duration = duration
             repeatMode = ObjectAnimator.REVERSE
             repeatCount = ObjectAnimator.INFINITE
