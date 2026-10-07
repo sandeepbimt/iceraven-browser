@@ -36,6 +36,16 @@
                     android:visibility="visible" />
             </mozilla.components.ui.widgets.VerticalSwipeRefreshLayout>
 
+            <ImageView
+                android:id="@+id/pageTransitionOverlay"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:importantForAccessibility="no"
+                android:visibility="gone"
+                android:clickable="false"
+                android:focusable="false"
+                android:scaleType="fitXY" />
+
             <ViewStub
                 android:id="@+id/findInPageViewStub"
                 android:layout_width="match_parent"

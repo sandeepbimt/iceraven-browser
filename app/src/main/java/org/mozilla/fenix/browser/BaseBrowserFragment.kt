@@ -297,6 +297,7 @@ abstract class BaseBrowserFragment :
     @VisibleForTesting internal val messagingFeatureMicrosurvey = ViewBoundFeatureWrapper<MessagingFeature>()
 
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
+    private var pageTransitionController: SandfoxPageTransitionController? = null
     private val lastTabFeature = ViewBoundFeatureWrapper<LastTabFeature>()
     private val contextMenuFeature = ViewBoundFeatureWrapper<ContextMenuFeature>()
     private val downloadsFeature = ViewBoundFeatureWrapper<DownloadsFeature>()
@@ -1429,6 +1430,18 @@ abstract class BaseBrowserFragment :
             bottomToolbarHeight = bottomToolbarHeight,
         )
 
+        pageTransitionController =
+            SandfoxPageTransitionController(
+                engineView = binding.engineView,
+                overlay = binding.pageTransitionOverlay,
+                overlayParent = binding.browserLayout,
+            ).also { controller ->
+                tab.engineState.engineSession?.let(controller::attach)
+                if (tab.content.loading) {
+                    controller.primeForExistingLoad()
+                }
+            }
+
         initializeMicrosurveyFeature(context)
     }
 
@@ -2432,6 +2445,9 @@ abstract class BaseBrowserFragment :
         // Diagnostic breadcrumb for "Display already aquired" crash:
         // https://github.com/mozilla-mobile/android-components/issues/7960
         breadcrumb(message = "onDestroyView()")
+
+        pageTransitionController?.detach()
+        pageTransitionController = null
 
         binding.engineView.setActivityContext(null)
         requireContext().accessibilityManager.removeAccessibilityStateChangeListener(this)
