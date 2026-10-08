@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  c1-chromium-checkout:
+  c2-chromium-dependencies:
     machine:
       image: ubuntu-2404:current
     resource_class: large
@@ -11,16 +11,10 @@ jobs:
           name: Measure build VM
           command: |
             set -eux
-            echo "=== BEFORE CHECKOUT: CPU ==="
-            nproc
-            echo "=== BEFORE CHECKOUT: RAM ==="
-            free -h
             echo "=== BEFORE CHECKOUT: DISK ==="
             df -hT
-            echo "=== BEFORE CHECKOUT: ARCH ==="
-            uname -m
-            echo "=== BEFORE CHECKOUT: OS ==="
-            cat /etc/os-release
+            echo "=== BEFORE CHECKOUT: RAM ==="
+            free -h
       - run:
           name: Install depot_tools
           command: |
@@ -49,31 +43,57 @@ jobs:
               fetch --no-tags --depth=1 origin \
               "+refs/tags/$CHROMIUM_TAG:refs/tags/$CHROMIUM_TAG"
 
-            git -C "$SRC_DIR" rev-parse --verify "refs/tags/$CHROMIUM_TAG"
             git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
-
-            echo "=== PINNED CHROMIUM ==="
-            git -C "$SRC_DIR" rev-parse HEAD
             git -C "$SRC_DIR" describe --tags --exact-match
       - run:
-          name: Measure checkout footprint
+          name: Prepare Chromium dependency sync
           command: |
             set -eux
-            SRC_DIR="$HOME/afterbird-chromium/src"
-            echo "=== AFTER CHECKOUT: DISK ==="
+            export PATH="$HOME/depot_tools:$PATH"
+            WORKDIR="$HOME/afterbird-chromium"
+            cat > "$WORKDIR/.gclient" <<'EOF'
+            solutions = [
+              {
+                "name": "src",
+                "url": "https://chromium.googlesource.com/chromium/src.git",
+                "managed": False,
+                "custom_deps": {},
+                "custom_vars": {},
+              },
+            ]
+            target_os = ["android"]
+            EOF
+            cat "$WORKDIR/.gclient"
+      - run:
+          name: Sync Chromium Android dependencies
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+            export DEPOT_TOOLS_UPDATE=0
+            cd "$HOME/afterbird-chromium"
+            gclient sync -D --no-history --nohooks
+      - run:
+          name: Measure dependency footprint
+          command: |
+            set -eux
+            WORKDIR="$HOME/afterbird-chromium"
+            SRC_DIR="$WORKDIR/src"
+            echo "=== AFTER DEPENDENCY SYNC: DISK ==="
             df -hT
-            echo "=== AFTER CHECKOUT: SOURCE SIZE ==="
+            echo "=== AFTER DEPENDENCY SYNC: SOURCE SIZE ==="
             du -sh "$SRC_DIR"
-            echo "=== AFTER CHECKOUT: WORKSPACE SIZE ==="
-            du -sh "$HOME/afterbird-chromium"
-            echo "=== AFTER CHECKOUT: GIT SIZE ==="
+            echo "=== AFTER DEPENDENCY SYNC: WORKSPACE SIZE ==="
+            du -sh "$WORKDIR"
+            echo "=== AFTER DEPENDENCY SYNC: GIT SIZE ==="
             du -sh "$SRC_DIR/.git"
-            echo "=== AFTER CHECKOUT: REVISION ==="
+            echo "=== AFTER DEPENDENCY SYNC: REVISION ==="
             git -C "$SRC_DIR" rev-parse HEAD
-            echo "=== AFTER CHECKOUT: TAG ==="
+            echo "=== AFTER DEPENDENCY SYNC: TAG ==="
             git -C "$SRC_DIR" describe --tags --exact-match
+            echo "=== AFTER DEPENDENCY SYNC: DEPOT TOOLS ==="
+            du -sh "$HOME/depot_tools"
 
 workflows:
-  c1-chromium-checkout:
+  c2-chromium-dependencies:
     jobs:
-      - c1-chromium-checkout
+      - c2-chromium-dependencies
