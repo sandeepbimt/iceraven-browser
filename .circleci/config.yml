@@ -25,6 +25,7 @@ jobs:
           command: |
             set -eux
             git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+            "$HOME/depot_tools/ensure_bootstrap"
             echo 'export PATH="$HOME/depot_tools:$PATH"' >> "$BASH_ENV"
 
       - run:
