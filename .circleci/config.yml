@@ -83,6 +83,34 @@ jobs:
             gclient sync -D --no-history --nohooks
 
       - run:
+          name: Fetch pinned Afterbird delta
+          command: |
+            set -eux
+            AFTERBIRD_DIR="$HOME/afterbird-delta"
+            AFTERBIRD_URL="https://github.com/danosito/afterbird.git"
+            AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
+
+            mkdir -p "$AFTERBIRD_DIR"
+            git -C "$AFTERBIRD_DIR" init
+            git -C "$AFTERBIRD_DIR" remote add origin "$AFTERBIRD_URL"
+            git -C "$AFTERBIRD_DIR" fetch --depth=1 origin "$AFTERBIRD_SHA"
+            git -C "$AFTERBIRD_DIR" sparse-checkout init --no-cone
+            git -C "$AFTERBIRD_DIR" sparse-checkout set \
+              'patches/m151/*.patch' \
+              'chrome/android/java/res_chromium_base/**' \
+              '.build/args/release.gn'
+            git -C "$AFTERBIRD_DIR" checkout --force --detach "$AFTERBIRD_SHA"
+
+            test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
+            test -f "$AFTERBIRD_DIR/.build/args/release.gn"
+            test -d "$AFTERBIRD_DIR/patches/m151"
+            test -d "$AFTERBIRD_DIR/chrome/android/java/res_chromium_base"
+
+            echo "=== AFTERBIRD DELTA ==="
+            git -C "$AFTERBIRD_DIR" rev-parse HEAD
+            du -sh "$AFTERBIRD_DIR"
+
+      - run:
           name: Install Chromium host build dependencies
           command: |
             set -eux
@@ -110,12 +138,14 @@ jobs:
             cd "$SRC_DIR"
             git clean -ffd
 
+            AFTERBIRD_DIR="$HOME/afterbird-delta"
+
             rm -rf "$SRC_DIR/chrome/android/java/res_chromium_base"
             mkdir -p "$SRC_DIR/chrome/android/java/res_chromium_base"
-            cp -a "$CIRCLE_WORKING_DIRECTORY/chrome/android/java/res_chromium_base/." \
+            cp -a "$AFTERBIRD_DIR/chrome/android/java/res_chromium_base/." \
               "$SRC_DIR/chrome/android/java/res_chromium_base/"
 
-            for patch in "$CIRCLE_WORKING_DIRECTORY"/patches/m151/*.patch; do
+            for patch in "$AFTERBIRD_DIR"/patches/m151/*.patch; do
               echo "Applying $patch"
               git apply --check "$patch"
               git apply "$patch"
@@ -133,7 +163,7 @@ jobs:
             OUT_DIR="$SRC_DIR/out/afterbird_production"
 
             mkdir -p "$OUT_DIR"
-            cp "$CIRCLE_WORKING_DIRECTORY/.build/args/release.gn" "$OUT_DIR/args.gn"
+            cp "$HOME/afterbird-delta/.build/args/release.gn" "$OUT_DIR/args.gn"
 
             cd "$SRC_DIR"
             gn gen "$OUT_DIR"
