@@ -178,7 +178,7 @@ jobs:
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             export PATH="$SRC_DIR/buildtools/linux64:$PATH"
 
-            gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all >/dev/null
+            gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all
 
             echo "=== C3 PRE-FLIGHT PASSED ==="
             echo "=== DISK ==="
