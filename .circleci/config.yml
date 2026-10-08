@@ -141,7 +141,6 @@ jobs:
 
             AFTERBIRD_DIR="$HOME/afterbird-delta"
 
-            rm -rf "$SRC_DIR/chrome/android/java/res_chromium_base"
             mkdir -p "$SRC_DIR/chrome/android/java/res_chromium_base"
             cp -a "$AFTERBIRD_DIR/chrome/android/java/res_chromium_base/." \
               "$SRC_DIR/chrome/android/java/res_chromium_base/"
