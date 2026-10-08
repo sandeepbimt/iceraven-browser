@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  c3-chromium-gn-preflight:
+  c4-afterbird-baseline-build:
     machine:
       image: ubuntu-2404:current
     resource_class: large
@@ -201,7 +201,38 @@ jobs:
             echo "=== PATCH STATUS ==="
             git -C "$SRC_DIR" status --short
 
+
+      - run:
+          name: Build exact Afterbird baseline APK
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+            SRC_DIR="$HOME/afterbird-chromium/src"
+            OUT_DIR="$SRC_DIR/out/afterbird_production"
+            export PATH="$SRC_DIR/buildtools/linux64:$PATH"
+            cd "$SRC_DIR"
+
+            echo "=== C4 PRE-BUILD DISK ==="
+            df -hT
+            echo "=== C4 PRE-BUILD RAM ==="
+            free -h
+
+            autoninja -C "$OUT_DIR" -j2 chrome_public_apk
+
+            echo "=== C4 BUILD PASSED ==="
+            ls -lh "$OUT_DIR/apks/ChromePublic.apk"
+            echo "=== C4 POST-BUILD DISK ==="
+            df -hT
+            echo "=== C4 POST-BUILD RAM ==="
+            free -h
+            mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
+            cp "$OUT_DIR/apks/ChromePublic.apk" "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/ChromePublic.apk"
+
+      - store_artifacts:
+          path: afterbird-baseline/ChromePublic.apk
+          destination: afterbird-baseline/ChromePublic.apk
+
 workflows:
-  c3-chromium-gn-preflight:
+  c4-afterbird-baseline-build:
     jobs:
-      - c3-chromium-gn-preflight
+      - c4-afterbird-baseline-build
