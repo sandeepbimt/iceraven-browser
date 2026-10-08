@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  c0-preflight:
+  c1-chromium-checkout:
     machine:
       image: ubuntu-2404:current
     resource_class: large
@@ -11,23 +11,69 @@ jobs:
           name: Measure build VM
           command: |
             set -eux
-            echo "=== CPU ==="
+            echo "=== BEFORE CHECKOUT: CPU ==="
             nproc
-            lscpu | sed -n '1,20p'
-            echo "=== RAM ==="
+            echo "=== BEFORE CHECKOUT: RAM ==="
             free -h
-            echo "=== DISK ==="
+            echo "=== BEFORE CHECKOUT: DISK ==="
             df -hT
-            echo "=== ARCH ==="
+            echo "=== BEFORE CHECKOUT: ARCH ==="
             uname -m
-            echo "=== OS ==="
+            echo "=== BEFORE CHECKOUT: OS ==="
             cat /etc/os-release
-            echo "=== HOME ==="
-            du -sh "$HOME" || true
-            echo "=== WORKSPACE ==="
-            du -sh "$CIRCLE_WORKING_DIRECTORY" || true
+      - run:
+          name: Install depot_tools
+          command: |
+            set -eux
+            git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+            echo 'export PATH="$HOME/depot_tools:$PATH"' >> "$BASH_ENV"
+      - run:
+          name: Checkout pinned Chromium source
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+
+            CHROMIUM_TAG="151.0.7922.38"
+            CHROMIUM_URL="https://chromium.googlesource.com/chromium/src.git"
+            WORKDIR="$HOME/afterbird-chromium"
+            SRC_DIR="$WORKDIR/src"
+
+            mkdir -p "$SRC_DIR"
+            git -C "$SRC_DIR" init
+            git -C "$SRC_DIR" remote add origin "$CHROMIUM_URL"
+
+            git -C "$SRC_DIR" \
+              -c protocol.version=2 \
+              -c http.lowSpeedLimit=0 \
+              -c http.lowSpeedTime=300 \
+              fetch --no-tags --depth=1 origin \
+              "+refs/tags/$CHROMIUM_TAG:refs/tags/$CHROMIUM_TAG"
+
+            git -C "$SRC_DIR" rev-parse --verify "refs/tags/$CHROMIUM_TAG"
+            git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
+
+            echo "=== PINNED CHROMIUM ==="
+            git -C "$SRC_DIR" rev-parse HEAD
+            git -C "$SRC_DIR" describe --tags --exact-match
+      - run:
+          name: Measure checkout footprint
+          command: |
+            set -eux
+            SRC_DIR="$HOME/afterbird-chromium/src"
+            echo "=== AFTER CHECKOUT: DISK ==="
+            df -hT
+            echo "=== AFTER CHECKOUT: SOURCE SIZE ==="
+            du -sh "$SRC_DIR"
+            echo "=== AFTER CHECKOUT: WORKSPACE SIZE ==="
+            du -sh "$HOME/afterbird-chromium"
+            echo "=== AFTER CHECKOUT: GIT SIZE ==="
+            du -sh "$SRC_DIR/.git"
+            echo "=== AFTER CHECKOUT: REVISION ==="
+            git -C "$SRC_DIR" rev-parse HEAD
+            echo "=== AFTER CHECKOUT: TAG ==="
+            git -C "$SRC_DIR" describe --tags --exact-match
 
 workflows:
-  c0-preflight:
+  c1-chromium-checkout:
     jobs:
-      - c0-preflight
+      - c1-chromium-checkout
