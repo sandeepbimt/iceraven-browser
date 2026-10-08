@@ -177,6 +177,7 @@ jobs:
             SRC_DIR="$HOME/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             export PATH="$SRC_DIR/buildtools/linux64:$PATH"
+            cd "$SRC_DIR"
 
             gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all
 
