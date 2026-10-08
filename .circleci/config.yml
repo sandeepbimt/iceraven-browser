@@ -1,0 +1,33 @@
+version: 2.1
+
+jobs:
+  c0-preflight:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: xlarge
+    steps:
+      - checkout
+      - run:
+          name: Measure build VM
+          command: |
+            set -eux
+            echo "=== CPU ==="
+            nproc
+            lscpu | sed -n '1,20p'
+            echo "=== RAM ==="
+            free -h
+            echo "=== DISK ==="
+            df -hT
+            echo "=== ARCH ==="
+            uname -m
+            echo "=== OS ==="
+            cat /etc/os-release
+            echo "=== HOME ==="
+            du -sh "$HOME" || true
+            echo "=== WORKSPACE ==="
+            du -sh "$CIRCLE_WORKING_DIRECTORY" || true
+
+workflows:
+  c0-preflight:
+    jobs:
+      - c0-preflight
