@@ -51,18 +51,17 @@ jobs:
             set -eux
             export PATH="$HOME/depot_tools:$PATH"
             WORKDIR="$HOME/afterbird-chromium"
-            cat > "$WORKDIR/.gclient" <<'EOF'
-            solutions = [
-              {
-                "name": "src",
-                "url": "https://chromium.googlesource.com/chromium/src.git",
-                "managed": False,
-                "custom_deps": {},
-                "custom_vars": {},
-              },
-            ]
-            target_os = ["android"]
-            EOF
+            printf '%s\n' \
+              'solutions = [' \
+              '  {' \
+              '    "name": "src",' \
+              '    "url": "https://chromium.googlesource.com/chromium/src.git",' \
+              '    "managed": False,' \
+              '    "custom_deps": {},' \
+              '    "custom_vars": {},' \
+              '  },' \
+              ']' \
+              'target_os = ["android"]' > "$WORKDIR/.gclient"
             cat "$WORKDIR/.gclient"
       - run:
           name: Sync Chromium Android dependencies
