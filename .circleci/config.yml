@@ -162,7 +162,6 @@ jobs:
             WORKDIR="$HOME/afterbird-chromium"
             SRC_DIR="$WORKDIR/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
-            export PATH="$SRC_DIR/buildtools/linux64:$PATH"
 
             mkdir -p "$OUT_DIR"
             cp "$HOME/afterbird-delta/.build/args/release.gn" "$OUT_DIR/args.gn"
@@ -177,6 +176,7 @@ jobs:
             export PATH="$HOME/depot_tools:$PATH"
             SRC_DIR="$HOME/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
+            export PATH="$SRC_DIR/buildtools/linux64:$PATH"
 
             gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all >/dev/null
 
