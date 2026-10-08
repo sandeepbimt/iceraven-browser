@@ -1,26 +1,32 @@
 version: 2.1
 
 jobs:
-  c2-chromium-dependencies:
+  c3-chromium-gn-preflight:
     machine:
       image: ubuntu-2404:current
     resource_class: large
     steps:
       - checkout
+
       - run:
           name: Measure build VM
           command: |
             set -eux
-            echo "=== BEFORE CHECKOUT: DISK ==="
+            echo "=== BUILD VM: DISK ==="
             df -hT
-            echo "=== BEFORE CHECKOUT: RAM ==="
+            echo "=== BUILD VM: RAM ==="
             free -h
+            echo "=== BUILD VM: CPU ==="
+            nproc
+            uname -a
+
       - run:
           name: Install depot_tools
           command: |
             set -eux
             git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
             echo 'export PATH="$HOME/depot_tools:$PATH"' >> "$BASH_ENV"
+
       - run:
           name: Checkout pinned Chromium source
           command: |
@@ -45,12 +51,15 @@ jobs:
 
             git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
             git -C "$SRC_DIR" describe --tags --exact-match
+            test "$(git -C "$SRC_DIR" rev-parse HEAD)" = "4d382822a8dd007729a4a3f9195a49b0f51616e"
+
       - run:
-          name: Prepare Chromium dependency sync
+          name: Prepare Chromium Android dependency sync
           command: |
             set -eux
             export PATH="$HOME/depot_tools:$PATH"
             WORKDIR="$HOME/afterbird-chromium"
+
             printf '%s\n' \
               'solutions = [' \
               '  {' \
@@ -62,7 +71,9 @@ jobs:
               '  },' \
               ']' \
               'target_os = ["android"]' > "$WORKDIR/.gclient"
+
             cat "$WORKDIR/.gclient"
+
       - run:
           name: Sync Chromium Android dependencies
           command: |
@@ -71,28 +82,94 @@ jobs:
             export DEPOT_TOOLS_UPDATE=0
             cd "$HOME/afterbird-chromium"
             gclient sync -D --no-history --nohooks
+
       - run:
-          name: Measure dependency footprint
+          name: Install Chromium host build dependencies
           command: |
             set -eux
+            export DEBIAN_FRONTEND=noninteractive
+            cd "$HOME/afterbird-chromium/src"
+            ./build/install-build-deps.sh --no-chromeos-fonts
+
+      - run:
+          name: Run Chromium hooks
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+            export DEPOT_TOOLS_UPDATE=0
+            cd "$HOME/afterbird-chromium"
+            gclient runhooks
+
+      - run:
+          name: Apply Afterbird Chromium delta
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
             WORKDIR="$HOME/afterbird-chromium"
             SRC_DIR="$WORKDIR/src"
-            echo "=== AFTER DEPENDENCY SYNC: DISK ==="
+
+            cd "$SRC_DIR"
+            git clean -ffd
+
+            rm -rf "$SRC_DIR/chrome/android/java/res_chromium_base"
+            mkdir -p "$SRC_DIR/chrome/android/java/res_chromium_base"
+            cp -a "$CIRCLE_WORKING_DIRECTORY/chrome/android/java/res_chromium_base/." \
+              "$SRC_DIR/chrome/android/java/res_chromium_base/"
+
+            for patch in "$CIRCLE_WORKING_DIRECTORY"/patches/m151/*.patch; do
+              echo "Applying $patch"
+              git apply --check "$patch"
+              git apply "$patch"
+            done
+
+            git status --short
+
+      - run:
+          name: Generate release GN configuration
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+            WORKDIR="$HOME/afterbird-chromium"
+            SRC_DIR="$WORKDIR/src"
+            OUT_DIR="$SRC_DIR/out/afterbird_production"
+
+            mkdir -p "$OUT_DIR"
+            cp "$CIRCLE_WORKING_DIRECTORY/.build/args/release.gn" "$OUT_DIR/args.gn"
+
+            cd "$SRC_DIR"
+            gn gen "$OUT_DIR"
+
+      - run:
+          name: Preflight Chromium Android dependency graph
+          command: |
+            set -eux
+            export PATH="$HOME/depot_tools:$PATH"
+            SRC_DIR="$HOME/afterbird-chromium/src"
+            OUT_DIR="$SRC_DIR/out/afterbird_production"
+
+            gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all >/dev/null
+
+            echo "=== C3 PRE-FLIGHT PASSED ==="
+            echo "=== DISK ==="
             df -hT
-            echo "=== AFTER DEPENDENCY SYNC: SOURCE SIZE ==="
+            echo "=== RAM ==="
+            free -h
+            echo "=== SOURCE SIZE ==="
             du -sh "$SRC_DIR"
-            echo "=== AFTER DEPENDENCY SYNC: WORKSPACE SIZE ==="
-            du -sh "$WORKDIR"
-            echo "=== AFTER DEPENDENCY SYNC: GIT SIZE ==="
+            echo "=== WORKSPACE SIZE ==="
+            du -sh "$HOME/afterbird-chromium"
+            echo "=== GN OUTPUT SIZE ==="
+            du -sh "$OUT_DIR"
+            echo "=== GIT SIZE ==="
             du -sh "$SRC_DIR/.git"
-            echo "=== AFTER DEPENDENCY SYNC: REVISION ==="
+            echo "=== REVISION ==="
             git -C "$SRC_DIR" rev-parse HEAD
-            echo "=== AFTER DEPENDENCY SYNC: TAG ==="
+            echo "=== TAG ==="
             git -C "$SRC_DIR" describe --tags --exact-match
-            echo "=== AFTER DEPENDENCY SYNC: DEPOT TOOLS ==="
-            du -sh "$HOME/depot_tools"
+            echo "=== PATCH STATUS ==="
+            git -C "$SRC_DIR" status --short
 
 workflows:
-  c2-chromium-dependencies:
+  c3-chromium-gn-preflight:
     jobs:
-      - c2-chromium-dependencies
+      - c3-chromium-gn-preflight
