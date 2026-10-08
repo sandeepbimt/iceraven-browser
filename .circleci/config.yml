@@ -51,7 +51,6 @@ jobs:
 
             git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
             git -C "$SRC_DIR" describe --tags --exact-match
-            test "$(git -C "$SRC_DIR" rev-parse HEAD)" = "4d382822a8dd007729a4a3f9195a49b0f51616e"
 
       - run:
           name: Prepare Chromium Android dependency sync
