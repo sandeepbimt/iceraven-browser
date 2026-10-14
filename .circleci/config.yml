@@ -12,17 +12,15 @@ jobs:
       - run:
           name: Record stage start time and validate BuildBuddy credentials
           command: |
-            # Do not enable xtrace in this step: credentials must never appear in logs.
+            # Do not enable xtrace: credentials must never be printed.
             set -eu
             echo "export STAGE_START_TS=$(date +%s)" >> "$BASH_ENV"
             echo "STAGE_INDEX=<< parameters.stage_index >>"
-
-            if [ -z "${BUILDBUDDY_API_KEY:-}" ]; then
+            if [ -z "$(printenv BUILDBUDDY_API_KEY 2>/dev/null || true)" ]; then
               echo "MISSING_REQUIRED_SECRET=BUILDBUDDY_API_KEY" >&2
               echo "Add this as a CircleCI project environment variable before running the staged build." >&2
               exit 1
             fi
-
             HELPER=/tmp/sandfox-buildbuddy-credential-helper.py
             printf '%s\n' \
               '#!/usr/bin/env python3' \
@@ -30,23 +28,11 @@ jobs:
               'import os' \
               'import sys' \
               '' \
-              'try:' \
-              '    request = json.load(sys.stdin)' \
-              'except Exception:' \
-              '    print("Siso credential helper received invalid JSON", file=sys.stderr)' \
-              '    sys.exit(1)' \
-              '' \
-              'uri = str(request.get("uri", "")).lower()' \
-              'if "remote.buildbuddy.io" not in uri:' \
-              '    print(json.dumps({"headers": {}}))' \
-              '    sys.exit(0)' \
-              '' \
-              'api_key = os.environ.get("BUILDBUDDY_API_KEY", "")' \
-              'if not api_key:' \
-              '    print("BUILDBUDDY_API_KEY is missing", file=sys.stderr)' \
-              '    sys.exit(1)' \
-              '' \
-              'print(json.dumps({"headers": {"x-buildbuddy-api-key": [api_key]}}))' \
+              'if len(sys.argv) < 2 or sys.argv[1] != "get":' \
+              '    raise SystemExit(1)' \
+              'sys.stdin.read()' \
+              'key = os.environ["BUILDBUDDY_API_KEY"]' \
+              'print(json.dumps({"headers": {"x-buildbuddy-api-key": [key]}}))' \
               > "$HELPER"
             chmod 700 "$HELPER"
             echo 'export SISO_CREDENTIAL_HELPER=/tmp/sandfox-buildbuddy-credential-helper.py' >> "$BASH_ENV"
@@ -54,7 +40,8 @@ jobs:
 
       - when:
           condition:
-            equal: [2, << parameters.stage_index >>]
+            not:
+              equal: [1, << parameters.stage_index >>]
           steps:
             - attach_workspace:
                 at: .
@@ -72,25 +59,6 @@ jobs:
                   echo "SOURCE_SNAPSHOT_RESTORE=PASS"
                   du -sh "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
 
-      - when:
-          condition:
-            equal: [3, << parameters.stage_index >>]
-          steps:
-            - attach_workspace:
-                at: .
-            - run:
-                name: Restore compact source snapshot
-                command: |
-                  set -euo pipefail
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst"
-                  mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
-                  tar -x -I 'zstd -T0 -d' \
-                    -f "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst" \
-                    -C "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/.gclient"
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/BUILD.gn"
-                  echo "SOURCE_SNAPSHOT_RESTORE=PASS"
-                  du -sh "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
       - run:
           name: Validate checkpoint archive mechanics
           command: |
@@ -125,10 +93,46 @@ jobs:
             echo "CHECKPOINT-SELF-TEST=PASS"
             echo "PAX nanosecond mtime preserved: $AFTER"
             echo "Both Siso state files were preserved."
-      - restore_cache:
-          name: Restore latest saved build-output checkpoint for this branch
-          keys:
-            - sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-
+      - when:
+          condition:
+            equal: [1, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore latest prior-workflow checkpoint for stage 1
+                keys:
+                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-
+      - when:
+          condition:
+            equal: [2, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 1 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .BuildNum }}-stage-1
+      - when:
+          condition:
+            equal: [3, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 2 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .BuildNum }}-stage-2
+      - when:
+          condition:
+            equal: [4, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 3 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .BuildNum }}-stage-3
+      - when:
+          condition:
+            equal: [5, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 4 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .BuildNum }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -286,6 +290,67 @@ jobs:
             done
             git status --short
       - run:
+          name: Configure Siso BuildBuddy REAPI and action cache
+          command: |
+            set -euo pipefail
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
+            HELPER=/tmp/sandfox-buildbuddy-credential-helper.py
+            BACKEND=/tmp/sandfox-buildbuddy-backend.star
+            test -x "$HELPER"
+            REAPI_ADDRESS="$(printenv AFTERBIRD_REAPI_ADDRESS 2>/dev/null || true)"
+            REAPI_INSTANCE="$(printenv AFTERBIRD_REAPI_INSTANCE 2>/dev/null || true)"
+            [ -n "$REAPI_ADDRESS" ] || REAPI_ADDRESS=remote.buildbuddy.io:443
+            [ -n "$REAPI_INSTANCE" ] || REAPI_INSTANCE=default
+            printf '%s\n' \
+              '# SANDFOX BuildBuddy REAPI backend configuration.' \
+              'load("@builtin//struct.star", "module")' \
+              '' \
+              'def __platform_properties(ctx):' \
+              '    return {' \
+              '        "default": {' \
+              '            "OSFamily": "Linux",' \
+              '        },' \
+              '        "large": {' \
+              '            "OSFamily": "Linux",' \
+              '        },' \
+              '    }' \
+              '' \
+              'backend = module(' \
+              '    "backend",' \
+              '    platform_properties = __platform_properties,' \
+              ')' > "$BACKEND"
+            python3 "$SRC_DIR/build/config/siso/configure_siso.py" \
+              --reapi_instance "$REAPI_INSTANCE" \
+              --reapi_address "$REAPI_ADDRESS" \
+              --reapi_backend_config_path "$BACKEND" \
+              --credential-helper "$HELPER"
+            printf '%s\n' 'ninja -re_cache_enable_write=true' > "$SRC_DIR/build/config/siso/.sisorc"
+            printf 'export SISO_REAPI_ADDRESS=%q\n' "$REAPI_ADDRESS" >> "$BASH_ENV"
+            printf 'export SISO_REAPI_INSTANCE=%q\n' "$REAPI_INSTANCE" >> "$BASH_ENV"
+            echo 'export SISO_LIMITS=local=8,remote=80' >> "$BASH_ENV"
+            echo "=== CONFIGURED SISO REAPI ENDPOINT ==="
+            grep -E '^(SISO_REAPI_ADDRESS|SISO_REAPI_INSTANCE|SISO_CREDENTIAL_HELPER)=' "$SRC_DIR/build/config/siso/.sisoenv"
+            echo "=== SISO CACHE-WRITE CONFIG ==="
+            cat "$SRC_DIR/build/config/siso/.sisorc"
+            test -s "$SRC_DIR/build/config/siso/backend_config/backend.star"
+
+      - run:
+          name: Prepare canonical Afterbird GN args with remote Siso enabled
+          command: |
+            set -euo pipefail
+            RELEASE_ARGS="$CIRCLE_WORKING_DIRECTORY/afterbird-delta/.build/args/release.gn"
+            ARGS_FILE="$CIRCLE_WORKING_DIRECTORY/sandfox-release-args.gn"
+            test -s "$RELEASE_ARGS"
+            sed -E '/^[[:space:]]*(use_remoteexec|use_siso|use_reclient)[[:space:]]*=/d' "$RELEASE_ARGS" > "$ARGS_FILE"
+            printf '\nuse_remoteexec = true\nuse_siso = true\nuse_reclient = false\n' >> "$ARGS_FILE"
+            test "$(grep -Ec '^use_remoteexec = true$' "$ARGS_FILE")" -eq 1
+            test "$(grep -Ec '^use_siso = true$' "$ARGS_FILE")" -eq 1
+            test "$(grep -Ec '^use_reclient = false$' "$ARGS_FILE")" -eq 1
+            echo "=== EXPLICIT REMOTE BUILD GN ARGS ==="
+            grep -E '^(use_remoteexec|use_siso|use_reclient) = ' "$ARGS_FILE"
+
+      - run:
           name: Restore matching checkpoint or prepare fresh GN graph
           command: |
             set -eux
@@ -295,17 +360,30 @@ jobs:
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             CHROMIUM_TAG="151.0.7922.38"
             AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
-
+            ARGS_FILE="$CIRCLE_WORKING_DIRECTORY/sandfox-release-args.gn"
+            SISO_ENV_FILE="$SRC_DIR/build/config/siso/.sisoenv"
+            SISO_RC_FILE="$SRC_DIR/build/config/siso/.sisorc"
+            SISO_BACKEND_FILE="$SRC_DIR/build/config/siso/backend_config/backend.star"
+            test -s "$ARGS_FILE"
+            test -s "$SISO_ENV_FILE"
+            test -s "$SISO_RC_FILE"
+            test -s "$SISO_BACKEND_FILE"
             test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
             test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
-            ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
+            ARGS_SHA="$(sha256sum "$ARGS_FILE" | awk '{print $1}')"
+            SISO_ENV_SHA="$(sha256sum "$SISO_ENV_FILE" | awk '{print $1}')"
+            SISO_RC_SHA="$(sha256sum "$SISO_RC_FILE" | awk '{print $1}')"
+            SISO_BACKEND_SHA="$(sha256sum "$SISO_BACKEND_FILE" | awk '{print $1}')"
             CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
             printf '%s\n' \
-              'schema=1' \
+              'schema=2' \
               "chromium_tag=$CHROMIUM_TAG" \
               "chromium_sha=$CHROMIUM_SHA" \
               "afterbird_sha=$AFTERBIRD_SHA" \
               "args_sha=$ARGS_SHA" \
+              "siso_env_sha=$SISO_ENV_SHA" \
+              "siso_rc_sha=$SISO_RC_SHA" \
+              "siso_backend_sha=$SISO_BACKEND_SHA" \
               'target=//chrome/android:chrome_public_apk' \
               'out=out/afterbird_production' \
               'target_cpu=arm64' \
@@ -321,7 +399,7 @@ jobs:
                      -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
                   if [ -s "$OUT_DIR/build.ninja" ] \
                      && [ -s "$OUT_DIR/args.gn" ] \
-                     && cmp -s "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn" \
+                     && cmp -s "$ARGS_FILE" "$OUT_DIR/args.gn" \
                      && [ -s "$OUT_DIR/.siso_fs_state" ] \
                      && [ ! -e "$OUT_DIR/.siso_fs_state.journal" ]; then
                     RESTORED="true"
@@ -349,13 +427,14 @@ jobs:
               RESTORED_OBJECTS="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
               echo "RESTORED_OBJECT_COUNT=$RESTORED_OBJECTS"
             elif [ "<< parameters.stage_index >>" -eq 1 ]; then
+              rm -rf "$OUT_DIR"
               mkdir -p "$OUT_DIR"
-              cp "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
+              cp "$ARGS_FILE" "$OUT_DIR/args.gn"
               cd "$SRC_DIR"
               gn gen "$OUT_DIR"
               echo "CHECKPOINT_RESTORE=MISS_OR_REJECTED; GN_SETUP=FRESH"
             else
-              echo "Stage 2 could not restore a valid stage-1 checkpoint; refusing a false resume." >&2
+              echo "Stage << parameters.stage_index >> could not restore a valid matching checkpoint; refusing a false resume." >&2
               exit 1
             fi
 
@@ -364,22 +443,72 @@ jobs:
             else
               echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
             fi
+            STAGE_START_OBJECTS="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
+            STAGE_START_OUTPUTS="$(find "$OUT_DIR/obj" "$OUT_DIR/gen" "$OUT_DIR/apks" -type f 2>/dev/null | wc -l | tr -d ' ')"
+            echo "export STAGE_START_OBJECTS=$STAGE_START_OBJECTS" >> "$BASH_ENV"
+            echo "export STAGE_START_OUTPUTS=$STAGE_START_OUTPUTS" >> "$BASH_ENV"
+            echo "STAGE_START_OBJECT_COUNT=$STAGE_START_OBJECTS"
+            echo "STAGE_START_BUILD_OUTPUT_COUNT=$STAGE_START_OUTPUTS"
             echo "=== OUTPUT SIZE ==="
             du -sh "$OUT_DIR"
             echo "=== DISK AFTER RESTORE / GN ==="
             df -hT
 
       - run:
-          name: Preflight Chromium Android dependency graph
+          name: Ensure Siso generator action pool is eight
           command: |
-            set -eux
+            set -euo pipefail
+            OUT_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production"
+            BUILD_NINJA="$OUT_DIR/build.ninja"
+            test -s "$BUILD_NINJA"
+            python3 -c '
+            import pathlib, sys
+            path = pathlib.Path(sys.argv[1])
+            lines = path.read_text().splitlines()
+            matches = [i for i, line in enumerate(lines) if line == "pool build_toolchain_action_pool"]
+            if len(matches) != 1:
+                raise SystemExit("Expected exactly one build_toolchain_action_pool definition; found " + str(len(matches)))
+            i = matches[0]
+            if i + 1 >= len(lines) or not lines[i + 1].strip().startswith("depth = "):
+                raise SystemExit("Pool depth line missing or has unexpected format")
+            current = int(lines[i + 1].strip().split("=", 1)[1])
+            if current < 8:
+                lines[i + 1] = "  depth = 8"
+                path.write_text(chr(10).join(lines) + chr(10))
+            print("build_toolchain_action_pool depth:", current, "->", max(current, 8))
+            ' "$BUILD_NINJA"
+            grep -A 1 '^pool build_toolchain_action_pool$' "$BUILD_NINJA"
+
+      - run:
+          name: Validate APK target and enforce remote-execution configuration
+          command: |
+            set -euo pipefail
             export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
             SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
+            SISO_ENV_FILE="$SRC_DIR/build/config/siso/.sisoenv"
+            SISO_RC_FILE="$SRC_DIR/build/config/siso/.sisorc"
+            SISO_BACKEND_FILE="$SRC_DIR/build/config/siso/backend_config/backend.star"
+            HELPER=/tmp/sandfox-buildbuddy-credential-helper.py
             export PATH="$SRC_DIR/buildtools/linux64:$PATH"
             cd "$SRC_DIR"
             test -s "$OUT_DIR/build.ninja"
-            gn desc "$OUT_DIR" //chrome/android:chrome_public_apk deps --all
+            test -s "$OUT_DIR/args.gn"
+            grep -Fx 'use_remoteexec = true' "$OUT_DIR/args.gn"
+            grep -Fx 'use_siso = true' "$OUT_DIR/args.gn"
+            grep -Fx 'use_reclient = false' "$OUT_DIR/args.gn"
+            test -s "$SISO_ENV_FILE"
+            grep -Eq '^SISO_REAPI_ADDRESS=.+:443$' "$SISO_ENV_FILE"
+            grep -Eq '^SISO_REAPI_INSTANCE=.+$' "$SISO_ENV_FILE"
+            grep -Fx "SISO_CREDENTIAL_HELPER=$HELPER" "$SISO_ENV_FILE"
+            test -x "$HELPER"
+            grep -Fx 'ninja -re_cache_enable_write=true' "$SISO_RC_FILE"
+            test -s "$SISO_BACKEND_FILE"
+            command -v autoninja >/dev/null
+            TARGET="$(gn ls "$OUT_DIR" //chrome/android:chrome_public_apk)"
+            test "$TARGET" = "//chrome/android:chrome_public_apk"
+            echo "REMOTE_EXECUTION_CONFIG_GATE=PASS"
+            echo "STRICT_REMOTE_GATE=ENABLED_IN_BUILD_COMMAND"
             echo "=== PRE-BUILD DISK ==="
             df -hT
             echo "=== PRE-BUILD RAM ==="
@@ -390,7 +519,10 @@ jobs:
             du -sh "$OUT_DIR"
             echo "=== SISO STATE AT BUILD START ==="
             ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
-            echo "CHECKPOINT_RESTORED=${CHECKPOINT_RESTORED:-unknown}"
+            echo "CHECKPOINT_RESTORED=$(printenv CHECKPOINT_RESTORED || true)"
+            echo "STAGE_START_OBJECT_COUNT=$(printenv STAGE_START_OBJECTS || true)"
+            echo "STAGE_START_BUILD_OUTPUT_COUNT=$(printenv STAGE_START_OUTPUTS || true)"
+
       - when:
           condition:
             equal: [1, << parameters.stage_index >>]
@@ -469,44 +601,47 @@ jobs:
               echo "=== SISO STATE BEFORE COMPILE ==="
               ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
             } | tee -a "$DIAG"
+            METRICS_FILE="$OUT_DIR/sandfox-stage-metrics.jsonl"
+            METRICS_ARTIFACT="$CIRCLE_WORKING_DIRECTORY/siso-stage-metrics.jsonl"
+            COUNT_FILE="$CIRCLE_WORKING_DIRECTORY/siso-metric-counts.txt"
+            REMOTE_ACTIONS=0
+            CACHE_ACTIONS=0
+            LOCAL_ACTIONS=0
+            FALLBACK_ACTIONS=0
+            METRIC_RECORDS=0
+            METRICS_PRESENT=false
+            REMOTE_EXEC_LOG_COUNT=0
+            OBJECTS_BEFORE="$(printenv STAGE_START_OBJECTS 2>/dev/null || true)"
+            OUTPUTS_BEFORE="$(printenv STAGE_START_OUTPUTS 2>/dev/null || true)"
+            [ -n "$OBJECTS_BEFORE" ] || OBJECTS_BEFORE=0
+            [ -n "$OUTPUTS_BEFORE" ] || OUTPUTS_BEFORE=0
+            rm -f "$METRICS_FILE"
+            : > "$METRICS_ARTIFACT"
+            : > "$COUNT_FILE"
             if [ -s "$APK" ]; then
               echo "APK already exists in restored output; no compile slice needed." | tee -a "$DIAG"
               RET=0
             elif [ "$REMAINING" -le 0 ]; then
-              echo "Setup consumed the stage wall budget; saving the prepared GN graph." | tee -a "$DIAG"
+              echo "Setup consumed the stage wall budget; preserving the existing checkpoint." | tee -a "$DIAG"
               RET=124
             else
-              echo "Running direct Siso REAPI build for at most ${REMAINING}s under a 47-minute stage wall budget." | tee -a "$DIAG"
-              export SISO_REAPI_ADDRESS="${SISO_REAPI_ADDRESS:-remote.buildbuddy.io:443}"
-              export SISO_REAPI_INSTANCE="${SISO_REAPI_INSTANCE:-default}"
-              export SISO_LIMITS="local=8,remote=80"
+              echo "Running autoninja/Siso with strict remote execution for at most $REMAINING seconds." | tee -a "$DIAG"
+              export SISO_LIMITS=local=8,remote=80
               set +e
-              timeout -s INT -k 90s "${REMAINING}s" \
-                python3 "$CIRCLE_WORKING_DIRECTORY/depot_tools/siso.py" ninja -re_cache_enable_write=true -C "$OUT_DIR" -remote_jobs=80 chrome_public_apk \
-                > >(tee -a "$BUILD_LOG") 2>&1
+              timeout --signal=INT --kill-after=90s "$REMAINING"s \
+                bash -c 'set -o pipefail; autoninja -strict_remote -metrics_json sandfox-stage-metrics.jsonl -C "$1" -j80 chrome_public_apk 2>&1 | tee "$2"' \
+                _ "$OUT_DIR" "$BUILD_LOG"
               RET=$?
               set -e
             fi
+            if [ -s "$APK" ]; then
+              echo "APK_PRESENT_AFTER_BUILD=true" | tee -a "$DIAG"
+              RET=0
+            elif [ "$RET" -eq 0 ]; then
+              echo "BUILD_FAILURE: autoninja returned success but ChromePublic.apk is missing." | tee -a "$DIAG"
+              RET=1
+            fi
             echo "autoninja_exit_code=$RET" | tee -a "$DIAG"
-            SKIP_SUMMARY="$(grep -h -E 'local:[0-9]+ .*skip=[0-9]+' "$BUILD_LOG" "$OUT_DIR/siso.INFO" 2>/dev/null | tail -n 1 || true)"
-            if [ -n "$SKIP_SUMMARY" ]; then
-              echo "SISO_ACTION_SUMMARY=$SKIP_SUMMARY" | tee -a "$DIAG"
-            else
-              echo "SISO_ACTION_SUMMARY=not-found-in-build-log-or-siso.INFO" | tee -a "$DIAG"
-            fi
-            if [ "$RET" -ne 0 ] && [ "$RET" -ne 124 ]; then
-              echo "BUILD_FAILURE: autoninja returned $RET; not treating this as a time-slice completion." | tee -a "$DIAG"
-              if [ -s "$OUT_DIR/.siso_failed_targets" ]; then
-                cp "$OUT_DIR/.siso_failed_targets" "$CIRCLE_WORKING_DIRECTORY/siso_failed_targets.txt"
-                cat "$OUT_DIR/.siso_failed_targets" | tee -a "$DIAG"
-              fi
-              if [ -s "$OUT_DIR/siso_output" ]; then
-                cp "$OUT_DIR/siso_output" "$CIRCLE_WORKING_DIRECTORY/siso_output.txt"
-                echo "=== SISO FAILURE OUTPUT (tail 2000 lines) ===" | tee -a "$DIAG"
-                tail -n 2000 "$OUT_DIR/siso_output" | tee -a "$DIAG"
-              fi
-              exit "$RET"
-            fi
             siso_alive() { pgrep -x siso >/dev/null 2>&1; }
             SISO_FORCED_KILL=0
             for _ in $(seq 1 60); do
@@ -523,10 +658,34 @@ jobs:
             else
               echo "SISO_SHUTDOWN=CLEAN" | tee -a "$DIAG"
             fi
+            if [ -s "$METRICS_FILE" ]; then
+              METRICS_PRESENT=true
+              cp "$METRICS_FILE" "$METRICS_ARTIFACT"
+              METRIC_RECORDS="$(wc -l < "$METRICS_FILE" | tr -d ' ')"
+            else
+              echo "SISO_METRICS_FILE=MISSING" | tee -a "$DIAG"
+            fi
+            # These REAPI signatures were observed in the earlier remote Siso run.
+            REMOTE_EXEC_LOG_COUNT="$(grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+            REMOTE_ACTIONS="$REMOTE_EXEC_LOG_COUNT"
+            echo "SISO_METRIC_RECORD_COUNT=$METRIC_RECORDS" | tee -a "$DIAG"
+            echo "REMOTE_EXEC_LOG_COUNT=$REMOTE_EXEC_LOG_COUNT" | tee -a "$DIAG"
+            rm -f "$METRICS_FILE"
+
             STATE="$OUT_DIR/.siso_fs_state"
             JOURNAL="$OUT_DIR/.siso_fs_state.journal"
             OBJECT_COUNT="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
-            echo "object_file_count=$OBJECT_COUNT" | tee -a "$DIAG"
+            OUTPUT_COUNT="$(find "$OUT_DIR/obj" "$OUT_DIR/gen" "$OUT_DIR/apks" -type f 2>/dev/null | wc -l | tr -d ' ')"
+            echo "object_file_count_before=$OBJECTS_BEFORE" | tee -a "$DIAG"
+            echo "object_file_count_after=$OBJECT_COUNT" | tee -a "$DIAG"
+            echo "object_file_count_delta=$((OBJECT_COUNT - OBJECTS_BEFORE))" | tee -a "$DIAG"
+            echo "build_output_count_before=$OUTPUTS_BEFORE" | tee -a "$DIAG"
+            echo "build_output_count_after=$OUTPUT_COUNT" | tee -a "$DIAG"
+            echo "build_output_count_delta=$((OUTPUT_COUNT - OUTPUTS_BEFORE))" | tee -a "$DIAG"
+            echo "remote_action_count=$REMOTE_ACTIONS" | tee -a "$DIAG"
+            echo "cache_action_count=$CACHE_ACTIONS" | tee -a "$DIAG"
+            echo "local_action_count=$LOCAL_ACTIONS" | tee -a "$DIAG"
+            echo "fallback_action_count=$FALLBACK_ACTIONS" | tee -a "$DIAG"
             ls -lh "$STATE" "$JOURNAL" 2>&1 | tee -a "$DIAG" || true
             if [ "$SISO_FORCED_KILL" -ne 0 ]; then
               echo "CHECKPOINT_SAVE=REJECTED reason=siso_did_not_exit_cleanly" | tee -a "$DIAG"
@@ -549,6 +708,8 @@ jobs:
             tar -c -I 'zstd -T0 -3' \
               --format=posix \
               --pax-option='delete=atime,delete=ctime' \
+              --checkpoint=100000 \
+              --checkpoint-action='echo=CHECKPOINT_PACK_PROGRESS checkpoint=%u' \
               --warning=no-file-changed \
               -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst.tmp" \
               -C "$SRC_DIR" out/afterbird_production
@@ -564,7 +725,30 @@ jobs:
             echo "checkpoint_pack_seconds=$((PACK_END - PACK_START))" | tee -a "$DIAG"
             echo "checkpoint_size_bytes=$(stat -c '%s' "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst")" | tee -a "$DIAG"
             echo "CHECKPOINT_SAVE=PASS" | tee -a "$DIAG"
-            if [ -s "$OUT_DIR/siso_output" ]; then
+            APK_PRESENT=false
+            if [ -s "$APK" ]; then APK_PRESENT=true; fi
+            printf '%s\n' \
+              "stage_index=<< parameters.stage_index >>" \
+              "build_exit_code=$RET" \
+              "object_count_before=$OBJECTS_BEFORE" \
+              "object_count_after=$OBJECT_COUNT" \
+              "output_count_before=$OUTPUTS_BEFORE" \
+              "output_count_after=$OUTPUT_COUNT" \
+              "remote_action_count=$REMOTE_ACTIONS" \
+              "cache_action_count=$CACHE_ACTIONS" \
+              "local_action_count=$LOCAL_ACTIONS" \
+              "fallback_action_count=$FALLBACK_ACTIONS" \
+              "metric_record_count=$METRIC_RECORDS" \
+              "metrics_present=$METRICS_PRESENT" \
+              "remote_exec_log_count=$REMOTE_EXEC_LOG_COUNT" \
+              "strict_remote=enabled" \
+              "checkpoint_save=PASS" \
+              "apk_present=$APK_PRESENT" \
+              > "$CIRCLE_WORKING_DIRECTORY/stage-build-result.txt"
+            if [ -d "$OUT_DIR/siso_output" ]; then
+              find "$OUT_DIR/siso_output" -maxdepth 3 -type f -printf '%T@ %s %p\n' \
+                | sort -nr | head -n 200 > "$CIRCLE_WORKING_DIRECTORY/siso_output.txt"
+            elif [ -s "$OUT_DIR/siso_output" ]; then
               cp "$OUT_DIR/siso_output" "$CIRCLE_WORKING_DIRECTORY/siso_output.txt"
             fi
             if [ -s "$OUT_DIR/.siso_failed_targets" ]; then
@@ -618,9 +802,15 @@ jobs:
             - store_artifacts:
                 path: siso_failed_targets.txt
                 destination: checkpoint-stage-<< parameters.stage_index >>/siso_failed_targets.txt
+            - store_artifacts:
+                path: siso-stage-metrics.jsonl
+                destination: checkpoint-stage-<< parameters.stage_index >>/siso-stage-metrics.jsonl
+            - store_artifacts:
+                path: stage-build-result.txt
+                destination: checkpoint-stage-<< parameters.stage_index >>/stage-build-result.txt
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
-          key: sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-{{ .BuildNum }}-stage-<< parameters.stage_index >>
+          key: sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .BuildNum }}-stage-<< parameters.stage_index >>
           paths:
             - checkpoint.tar.zst
             - checkpoint.meta
@@ -640,6 +830,70 @@ jobs:
       - store_artifacts:
           path: afterbird-baseline
           destination: afterbird-baseline
+      - run:
+          name: Validate remote work, checkpoint progress, and five-stage APK limit
+          command: |
+            set -euo pipefail
+            STAGE_INDEX=<< parameters.stage_index >>
+            APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
+            RESULT="$CIRCLE_WORKING_DIRECTORY/stage-build-result.txt"
+            if [ -s "$APK" ]; then
+              echo "APK_GATE=PASS; ChromePublic.apk exists and is non-empty."
+              exit 0
+            fi
+            if [ ! -s "$RESULT" ]; then
+              echo "STAGE_GATE=FAIL; no durable stage-result record was produced." >&2
+              exit 1
+            fi
+            result_value() { sed -n "s/^$1=//p" "$RESULT" | tail -n 1; }
+            BUILD_EXIT="$(result_value build_exit_code)"
+            OBJECTS_BEFORE="$(result_value object_count_before)"
+            OBJECTS_AFTER="$(result_value object_count_after)"
+            OUTPUTS_BEFORE="$(result_value output_count_before)"
+            OUTPUTS_AFTER="$(result_value output_count_after)"
+            REMOTE_ACTIONS="$(result_value remote_action_count)"
+            CACHE_ACTIONS="$(result_value cache_action_count)"
+            FALLBACK_ACTIONS="$(result_value fallback_action_count)"
+            METRICS_PRESENT="$(result_value metrics_present)"
+            METRIC_RECORDS="$(result_value metric_record_count)"
+            REMOTE_EXEC_LOG_COUNT="$(result_value remote_exec_log_count)"
+            STRICT_REMOTE="$(result_value strict_remote)"
+            CHECKPOINT_SAVE="$(result_value checkpoint_save)"
+            test "$CHECKPOINT_SAVE" = "PASS" || { echo "STAGE_GATE=FAIL; safe checkpoint missing." >&2; exit 1; }
+            test "$STRICT_REMOTE" = "enabled" || { echo "STAGE_GATE=FAIL; strict remote mode not enabled." >&2; exit 1; }
+            if [ "$BUILD_EXIT" -ne 124 ]; then
+              echo "STAGE_GATE=FAIL; no APK and build exit status $BUILD_EXIT (expected bounded timeout)." >&2
+              exit 1
+            fi
+            case "$OBJECTS_BEFORE:$OBJECTS_AFTER:$OUTPUTS_BEFORE:$OUTPUTS_AFTER:$REMOTE_ACTIONS:$CACHE_ACTIONS:$FALLBACK_ACTIONS:$METRIC_RECORDS:$REMOTE_EXEC_LOG_COUNT" in
+              *[!0-9:]*|:*|*::*)
+                echo "STAGE_GATE=FAIL; progress counters missing or malformed." >&2
+                exit 1
+                ;;
+            esac
+            if [ "$METRICS_PRESENT" != "true" ] && [ "$REMOTE_EXEC_LOG_COUNT" -le 0 ]; then
+              echo "STAGE_GATE=FAIL; no Siso metrics file and no remote-execution log evidence." >&2
+              exit 1
+            fi
+            if [ "$REMOTE_EXEC_LOG_COUNT" -le 0 ]; then
+              echo "STAGE_GATE=FAIL; Siso logs do not prove REAPI execution occurred." >&2
+              exit 1
+            fi
+            if [ "$FALLBACK_ACTIONS" -gt 0 ]; then
+              echo "STAGE_GATE=FAIL; remote-to-local fallback occurred in strict remote mode." >&2
+              exit 1
+            fi
+            if [ "$OUTPUTS_AFTER" -le "$OUTPUTS_BEFORE" ] && [ "$OBJECTS_AFTER" -le "$OBJECTS_BEFORE" ]; then
+              echo "STAGE_GATE=FAIL; stage added no durable outputs; refusing to spend another stage repeating work." >&2
+              echo "Objects: $OBJECTS_BEFORE -> $OBJECTS_AFTER; outputs: $OUTPUTS_BEFORE -> $OUTPUTS_AFTER" >&2
+              exit 1
+            fi
+            echo "STAGE_PROGRESS_GATE=PASS objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER remote=$REMOTE_ACTIONS cache=$CACHE_ACTIONS"
+            if [ "$STAGE_INDEX" -eq 5 ]; then
+              echo "MAX_STAGES_REACHED=5; APK was not produced." >&2
+              exit 1
+            fi
+            echo "STAGE_CONTINUATION=PASS; next stage will resume and must make useful progress."
 
 workflows:
   c4-afterbird-staged-checkpoint-build:
@@ -663,6 +917,22 @@ workflows:
           stage_index: 3
           requires:
             - c4-afterbird-stage-2
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-4
+          stage_index: 4
+          requires:
+            - c4-afterbird-stage-3
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-5
+          stage_index: 5
+          requires:
+            - c4-afterbird-stage-4
           filters:
             branches:
               only: sandfox/checkpoint-stage-v1
