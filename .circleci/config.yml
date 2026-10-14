@@ -16,6 +16,13 @@ jobs:
             echo "export STAGE_START_TS=$(date +%s)" >> "$BASH_ENV"
             echo "STAGE_INDEX=<< parameters.stage_index >>"
       - checkout
+
+      - when:
+          condition:
+            equal: [2, << parameters.stage_index >>]
+          steps:
+            - attach_workspace:
+                at: .
       - run:
           name: Validate checkpoint archive mechanics
           command: |
@@ -48,10 +55,14 @@ jobs:
             echo "CHECKPOINT-SELF-TEST=PASS"
             echo "PAX nanosecond mtime preserved: $AFTER"
             echo "Both Siso state files were preserved."
-      - restore_cache:
-          name: Restore latest checkpoint for this branch
-          keys:
-            - sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-
+      - when:
+          condition:
+            equal: [2, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage-1 output checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-
       - run:
           name: Measure build VM
           command: |
@@ -67,20 +78,28 @@ jobs:
           name: Install depot_tools
           command: |
             set -eux
-            if [ ! -d "$HOME/depot_tools/.git" ]; then
-              git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
             fi
-            "$HOME/depot_tools/ensure_bootstrap"
-            echo 'export PATH="$HOME/depot_tools:$PATH"' >> "$BASH_ENV"
+            if [ ! -d "$CIRCLE_WORKING_DIRECTORY/depot_tools/.git" ]; then
+              git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$CIRCLE_WORKING_DIRECTORY/depot_tools"
+            fi
+            "$CIRCLE_WORKING_DIRECTORY/depot_tools/ensure_bootstrap"
+            echo 'export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"' >> "$BASH_ENV"
             echo 'export DEPOT_TOOLS_UPDATE=0' >> "$BASH_ENV"
       - run:
           name: Checkout pinned Chromium source
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
             CHROMIUM_TAG="151.0.7922.38"
             CHROMIUM_URL="https://chromium.googlesource.com/chromium/src.git"
-            WORKDIR="$HOME/afterbird-chromium"
+            WORKDIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
             SRC_DIR="$WORKDIR/src"
             mkdir -p "$SRC_DIR"
             git -C "$SRC_DIR" init
@@ -99,8 +118,12 @@ jobs:
           name: Prepare Chromium Android dependency sync
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
-            WORKDIR="$HOME/afterbird-chromium"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            WORKDIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
             printf '%s\n' \
               'solutions = [' \
               '  {' \
@@ -117,15 +140,23 @@ jobs:
           name: Sync Chromium Android dependencies
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
             export DEPOT_TOOLS_UPDATE=0
-            cd "$HOME/afterbird-chromium"
+            cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
             gclient sync -D --no-history --nohooks
       - run:
           name: Fetch pinned Afterbird delta
           command: |
             set -eux
-            AFTERBIRD_DIR="$HOME/afterbird-delta"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             AFTERBIRD_URL="https://github.com/danosito/afterbird.git"
             AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
             mkdir -p "$AFTERBIRD_DIR"
@@ -149,24 +180,36 @@ jobs:
           name: Install Chromium host build dependencies
           command: |
             set -eux
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
             export DEBIAN_FRONTEND=noninteractive
-            cd "$HOME/afterbird-chromium/src"
+            cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             ./build/install-build-deps.sh --no-chromeos-fonts
       - run:
           name: Run Chromium hooks
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
             export DEPOT_TOOLS_UPDATE=0
-            cd "$HOME/afterbird-chromium"
+            cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
             gclient runhooks
       - run:
           name: Apply pinned Afterbird delta
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
-            SRC_DIR="$HOME/afterbird-chromium/src"
-            AFTERBIRD_DIR="$HOME/afterbird-delta"
+            if [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
+              exit 0
+            fi
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
+            AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             cd "$SRC_DIR"
             git clean -ffd
             mkdir -p "$SRC_DIR/chrome/android/java/res_chromium_base"
@@ -179,22 +222,23 @@ jobs:
             done
             git status --short
       - run:
-          name: Restore validated checkpoint or generate fresh GN graph
+          name: Prepare fresh GN graph or restore the stage-1 checkpoint
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
-            SRC_DIR="$HOME/afterbird-chromium/src"
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
-            AFTERBIRD_DIR="$HOME/afterbird-delta"
+            AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             CHROMIUM_TAG="151.0.7922.38"
             AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
-            CHECKPOINT_SCHEMA="1"
-            test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
-            test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
-            ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
-            CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
-            cat > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" <<EOF
-            schema=$CHECKPOINT_SCHEMA
+
+            if [ "<< parameters.stage_index >>" -eq 1 ]; then
+              test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
+              test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
+              ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
+              CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
+              cat > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" <<EOF
+            schema=1
             chromium_tag=$CHROMIUM_TAG
             chromium_sha=$CHROMIUM_SHA
             afterbird_sha=$AFTERBIRD_SHA
@@ -203,57 +247,56 @@ jobs:
             out=out/afterbird_production
             target_cpu=arm64
             EOF
-            RESTORED="false"
-            if [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" ] \
-               && [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" ]; then
-              if cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" \
-                        "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"; then
-                echo "Checkpoint fingerprint matches pinned build inputs."
-                if tar -x -I 'zstd -T0 -d' \
-                     -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
-                  if [ -s "$OUT_DIR/build.ninja" ] \
-                     && [ -s "$OUT_DIR/args.gn" ] \
-                     && cmp -s "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"; then
-                    RESTORED="true"
-                  else
-                    echo "Checkpoint lacks expected build graph/args; discarding it."
-                    rm -rf "$OUT_DIR"
-                  fi
-                else
-                  echo "Checkpoint extraction failed; discarding it."
-                  rm -rf "$OUT_DIR"
-                fi
-              else
-                echo "Checkpoint fingerprint mismatch; refusing stale outputs."
-                diff -u "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" \
-                        "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" || true
-                rm -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" \
-                      "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"
-              fi
-            else
-              echo "No saved checkpoint; creating the initial GN graph."
-            fi
-            if [ "$RESTORED" = "true" ]; then
-              echo "CHECKPOINT_RESTORE=ACCEPTED"
-              ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
-            else
               mkdir -p "$OUT_DIR"
               cp "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
               cd "$SRC_DIR"
               gn gen "$OUT_DIR"
-              echo "CHECKPOINT_RESTORE=FRESH_GN_GRAPH"
+              echo "CHECKPOINT_RESTORED=false"
+              echo "GN_SETUP=FRESH"
+            else
+              test -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
+              test -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"
+              test -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst"
+              cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"
+              echo "Checkpoint identity matches; extracting output into the preserved stage-1 source tree."
+              tar -x -I 'zstd -T0 -d' -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"
+              test -s "$OUT_DIR/build.ninja"
+              test -s "$OUT_DIR/args.gn"
+              cmp -s "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
+              if [ -s "$OUT_DIR/.siso_fs_state" ]; then
+                echo "SISO_STATE_RESTORE=present"
+              else
+                OBJ_COUNT="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
+                if [ "$OBJ_COUNT" -gt 0 ]; then
+                  echo "Checkpoint contains compiled objects but no Siso state; refusing false resume." >&2
+                  exit 1
+                fi
+                echo "SISO_STATE_RESTORE=absent_no_prior_objects"
+              fi
+              if [ -e "$OUT_DIR/.siso_fs_state.journal" ]; then
+                echo "Siso journal remains after stage-1 shutdown; refusing this checkpoint." >&2
+                exit 1
+              fi
+              echo "CHECKPOINT_RESTORED=true"
+              echo "CHECKPOINT_RESTORE=ACCEPTED"
+              ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
             fi
-            echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
+            if [ "<< parameters.stage_index >>" -eq 1 ]; then
+              echo "export CHECKPOINT_RESTORED=false" >> "$BASH_ENV"
+            else
+              echo "export CHECKPOINT_RESTORED=true" >> "$BASH_ENV"
+            fi
             echo "=== OUTPUT SIZE ==="
             du -sh "$OUT_DIR"
-            echo "=== DISK AFTER RESTORE/GEN ==="
+            echo "=== DISK AFTER GN / RESTORE ==="
             df -hT
+
       - run:
           name: Preflight Chromium Android dependency graph
           command: |
             set -eux
-            export PATH="$HOME/depot_tools:$PATH"
-            SRC_DIR="$HOME/afterbird-chromium/src"
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             export PATH="$SRC_DIR/buildtools/linux64:$PATH"
             cd "$SRC_DIR"
@@ -270,11 +313,25 @@ jobs:
             echo "=== SISO STATE AT BUILD START ==="
             ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
             echo "CHECKPOINT_RESTORED=${CHECKPOINT_RESTORED:-unknown}"
+      - when:
+          condition:
+            equal: [1, << parameters.stage_index >>]
+          steps:
+            - persist_to_workspace:
+                root: .
+                paths:
+                  - afterbird-chromium/src
+                  - afterbird-chromium/.gclient
+                  - afterbird-delta
+                  - depot_tools
+                  - current-checkpoint.meta
+
       - run:
           name: Build bounded Siso slice and save checkpoint
           command: |
             set -eu
-            SRC_DIR="$HOME/afterbird-chromium/src"
+            export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             BUILD_LOG="$CIRCLE_WORKING_DIRECTORY/build_stdout.log"
             DIAG="$CIRCLE_WORKING_DIRECTORY/stage-diag.txt"
@@ -444,17 +501,21 @@ jobs:
             - store_artifacts:
                 path: siso_failed_targets.txt
                 destination: checkpoint-stage-<< parameters.stage_index >>/siso_failed_targets.txt
-      - save_cache:
-          name: Save the current build-output checkpoint
-          key: sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-{{ .BuildNum }}-stage-<< parameters.stage_index >>
-          paths:
-            - checkpoint.tar.zst
-            - checkpoint.meta
+      - when:
+          condition:
+            equal: [1, << parameters.stage_index >>]
+          steps:
+            - save_cache:
+                name: Save stage-1 build-output checkpoint
+                key: sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-{{ .BuildNum }}-stage-1
+                paths:
+                  - checkpoint.tar.zst
+                  - checkpoint.meta
       - run:
           name: Record APK status
           command: |
             set -eux
-            APK="$HOME/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
+            APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
             mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
             if [ -s "$APK" ]; then
               cp "$APK" "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/ChromePublic.apk"
