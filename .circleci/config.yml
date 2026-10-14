@@ -382,6 +382,8 @@ jobs:
                   tar -c -I 'zstd -T0 -1' \
                     --format=posix \
                     --pax-option='delete=atime,delete=ctime' \
+                    --checkpoint=100000 \
+                    --checkpoint-action='echo=SOURCE_SNAPSHOT_PROGRESS checkpoint=%u' \
                     --exclude='src/out' \
                     -f "$ARCHIVE" \
                     -C "$SOURCE_ROOT" "${ARCHIVE_INPUTS[@]}"
