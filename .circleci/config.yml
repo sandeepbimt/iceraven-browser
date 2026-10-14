@@ -290,6 +290,25 @@ jobs:
             done
             git status --short
       - run:
+          name: Normalize Clang crash diagnostics path for REAPI
+          command: |
+            set -euo pipefail
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
+            FILE="$SRC_DIR/build/config/compiler/compiler.gni"
+            test -s "$FILE"
+            OLD_COUNT="$(grep -Ec '^[[:space:]]*clang_diagnostic_dir = rebase_path\("//out/clang-crashreports", root_build_dir\)[[:space:]]*$' "$FILE" || true)"
+            NEW_COUNT="$(grep -Ec '^[[:space:]]*clang_diagnostic_dir = "clang-crashreports"[[:space:]]*$' "$FILE" || true)"
+            if [ "$OLD_COUNT" -eq 1 ] && [ "$NEW_COUNT" -eq 0 ]; then
+              sed -i 's#clang_diagnostic_dir = rebase_path("//out/clang-crashreports", root_build_dir)#clang_diagnostic_dir = "clang-crashreports"#' "$FILE"
+            elif [ "$OLD_COUNT" -ne 0 ] || [ "$NEW_COUNT" -ne 1 ]; then
+              echo "Unexpected clang_diagnostic_dir definition; refusing to patch an unknown compiler.gni layout." >&2
+              exit 1
+            fi
+            test "$(grep -Ec '^[[:space:]]*clang_diagnostic_dir = "clang-crashreports"[[:space:]]*$' "$FILE")" -eq 1
+            ! grep -Eq '^[[:space:]]*clang_diagnostic_dir = rebase_path\("//out/clang-crashreports", root_build_dir\)[[:space:]]*$' "$FILE"
+            echo "CLANG_DIAGNOSTIC_PATH_NORMALIZATION=PASS"
+
+      - run:
           name: Configure Siso BuildBuddy REAPI and action cache
           command: |
             set -euo pipefail
@@ -374,9 +393,11 @@ jobs:
             SISO_ENV_SHA="$(sha256sum "$SISO_ENV_FILE" | awk '{print $1}')"
             SISO_RC_SHA="$(sha256sum "$SISO_RC_FILE" | awk '{print $1}')"
             SISO_BACKEND_SHA="$(sha256sum "$SISO_BACKEND_FILE" | awk '{print $1}')"
+            CLANG_COMPILER_GNI_SHA="$(sha256sum "$SRC_DIR/build/config/compiler/compiler.gni" | awk '{print $1}')"
             CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
             printf '%s\n' \
-              'schema=2' \
+              'schema=3' \
+              "clang_compiler_gni_sha=$CLANG_COMPILER_GNI_SHA" \
               "chromium_tag=$CHROMIUM_TAG" \
               "chromium_sha=$CHROMIUM_SHA" \
               "afterbird_sha=$AFTERBIRD_SHA" \
@@ -493,6 +514,15 @@ jobs:
             export PATH="$SRC_DIR/buildtools/linux64:$PATH"
             cd "$SRC_DIR"
             test -s "$OUT_DIR/build.ninja"
+            if grep -Fq -- '-fcrash-diagnostics-dir=../clang-crashreports' "$OUT_DIR/build.ninja"; then
+              echo "REAPI_DIAGNOSTIC_PATH_GATE=FAIL; generated build.ninja still contains a parent-relative crash diagnostics path." >&2
+              exit 1
+            fi
+            grep -Fq -- '-fcrash-diagnostics-dir=clang-crashreports' "$OUT_DIR/build.ninja" || {
+              echo "REAPI_DIAGNOSTIC_PATH_GATE=FAIL; expected normalized Clang diagnostics path not found in build.ninja." >&2
+              exit 1
+            }
+            echo "REAPI_DIAGNOSTIC_PATH_GATE=PASS"
             test -s "$OUT_DIR/args.gn"
             grep -Fx 'use_remoteexec = true' "$OUT_DIR/args.gn"
             grep -Fx 'use_siso = true' "$OUT_DIR/args.gn"
