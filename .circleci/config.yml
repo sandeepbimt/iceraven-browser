@@ -810,7 +810,9 @@ jobs:
                 destination: checkpoint-stage-<< parameters.stage_index >>/stage-build-result.txt
       - when:
           condition:
-            equal: [1, << parameters.stage_index >>]
+            equal:
+              - 1
+              - << parameters.stage_index >>
           steps:
             - run:
                 name: Pack source tree without duplicate build output
