@@ -812,25 +812,22 @@ jobs:
           name: Pack source tree without duplicate build output
           command: |
             set -euo pipefail
+            ROOT="$CIRCLE_WORKING_DIRECTORY"
             if [ "<< parameters.stage_index >>" -ne 1 ]; then
-              echo "Stage << parameters.stage_index >>: source snapshot already exists in the attached workspace; skipping repack."
+              echo "Stage << parameters.stage_index >>: source snapshot already handed off by stage 1."
+              test -s "$ROOT/afterbird-source.tar.zst"
               exit 0
             fi
-                command: |
-            ROOT="$CIRCLE_WORKING_DIRECTORY"
             SOURCE_ROOT="$ROOT/afterbird-chromium"
             ARCHIVE="$ROOT/afterbird-source.tar.zst"
             test -s "$SOURCE_ROOT/.gclient"
             test -s "$SOURCE_ROOT/src/BUILD.gn"
             test -s "$SOURCE_ROOT/src/out/afterbird_production/build.ninja"
             echo "SOURCE_SNAPSHOT_START=$(date -u +%FT%TZ)"
-            echo "Source tree before packing:"
             du -sh "$SOURCE_ROOT/src" "$SOURCE_ROOT/src/out" || true
             ARCHIVE_INPUTS=(.gclient src)
             if [ -s "$SOURCE_ROOT/.gclient_entries" ]; then
               ARCHIVE_INPUTS+=(.gclient_entries)
-            else
-              echo "SOURCE_SNAPSHOT_NOTE=.gclient_entries absent; preserving available gclient metadata only"
             fi
             tar -c -I 'zstd -T0 -1' \
               --format=posix \
@@ -844,40 +841,13 @@ jobs:
             echo "SOURCE_SNAPSHOT_BYTES=$(stat -c '%s' "$ARCHIVE")"
             sha256sum "$ARCHIVE"
             echo "SOURCE_SNAPSHOT_END=$(date -u +%FT%TZ)"
-
-                  SOURCE_ROOT="$ROOT/afterbird-chromium"
-                  ARCHIVE="$ROOT/afterbird-source.tar.zst"
-                  test -s "$SOURCE_ROOT/.gclient"
-                  test -s "$SOURCE_ROOT/src/BUILD.gn"
-                  test -s "$SOURCE_ROOT/src/out/afterbird_production/build.ninja"
-                  echo "SOURCE_SNAPSHOT_START=$(date -u +%FT%TZ)"
-                  echo "Source tree before packing:"
-                  du -sh "$SOURCE_ROOT/src" "$SOURCE_ROOT/src/out" || true
-                  ARCHIVE_INPUTS=(.gclient src)
-                  if [ -s "$SOURCE_ROOT/.gclient_entries" ]; then
-                    ARCHIVE_INPUTS+=(.gclient_entries)
-                  else
-                    echo "SOURCE_SNAPSHOT_NOTE=.gclient_entries absent; preserving available gclient metadata only"
-                  fi
-                  tar -c -I 'zstd -T0 -1' \
-                    --format=posix \
-                    --pax-option='delete=atime,delete=ctime' \
-                    --checkpoint=100000 \
-                    --checkpoint-action='echo=SOURCE_SNAPSHOT_PROGRESS checkpoint=%u' \
-                    --exclude='src/out' \
-                    -f "$ARCHIVE" \
-                    -C "$SOURCE_ROOT" "${ARCHIVE_INPUTS[@]}"
-                  test -s "$ARCHIVE"
-                  echo "SOURCE_SNAPSHOT_BYTES=$(stat -c %s "$ARCHIVE")"
-                  sha256sum "$ARCHIVE"
-                  echo "SOURCE_SNAPSHOT_END=$(date -u +%FT%TZ)"
-            - persist_to_workspace:
-                root: .
-                paths:
-                  - afterbird-source.tar.zst
-                  - afterbird-delta
-                  - depot_tools
-                  - current-checkpoint.meta
+      - persist_to_workspace:
+          root: .
+          paths:
+            - afterbird-source.tar.zst
+            - afterbird-delta
+            - depot_tools
+            - current-checkpoint.meta
 
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
