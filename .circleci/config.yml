@@ -23,6 +23,19 @@ jobs:
           steps:
             - attach_workspace:
                 at: .
+            - run:
+                name: Restore compact source snapshot
+                command: |
+                  set -euo pipefail
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst"
+                  mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
+                  tar -x -I 'zstd -T0 -d' \
+                    -f "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst" \
+                    -C "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/.gclient"
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/BUILD.gn"
+                  echo "SOURCE_SNAPSHOT_RESTORE=PASS"
+                  du -sh "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
 
       - when:
           condition:
@@ -30,6 +43,19 @@ jobs:
           steps:
             - attach_workspace:
                 at: .
+            - run:
+                name: Restore compact source snapshot
+                command: |
+                  set -euo pipefail
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst"
+                  mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
+                  tar -x -I 'zstd -T0 -d' \
+                    -f "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst" \
+                    -C "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/.gclient"
+                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/BUILD.gn"
+                  echo "SOURCE_SNAPSHOT_RESTORE=PASS"
+                  du -sh "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
       - run:
           name: Validate checkpoint archive mechanics
           command: |
@@ -334,11 +360,39 @@ jobs:
           condition:
             equal: [1, << parameters.stage_index >>]
           steps:
+            - run:
+                name: Pack source tree without duplicate build output
+                command: |
+                  set -euo pipefail
+                  ROOT="$CIRCLE_WORKING_DIRECTORY"
+                  SOURCE_ROOT="$ROOT/afterbird-chromium"
+                  ARCHIVE="$ROOT/afterbird-source.tar.zst"
+                  test -s "$SOURCE_ROOT/.gclient"
+                  test -s "$SOURCE_ROOT/src/BUILD.gn"
+                  test -s "$SOURCE_ROOT/src/out/afterbird_production/build.ninja"
+                  echo "SOURCE_SNAPSHOT_START=$(date -u +%FT%TZ)"
+                  echo "Source tree before packing:"
+                  du -sh "$SOURCE_ROOT/src" "$SOURCE_ROOT/src/out" || true
+                  ARCHIVE_INPUTS=(.gclient src)
+                  if [ -s "$SOURCE_ROOT/.gclient_entries" ]; then
+                    ARCHIVE_INPUTS+=(.gclient_entries)
+                  else
+                    echo "SOURCE_SNAPSHOT_NOTE=.gclient_entries absent; preserving available gclient metadata only"
+                  fi
+                  tar -c -I 'zstd -T0 -1' \
+                    --format=posix \
+                    --pax-option='delete=atime,delete=ctime' \
+                    --exclude='src/out' \
+                    -f "$ARCHIVE" \
+                    -C "$SOURCE_ROOT" "${ARCHIVE_INPUTS[@]}"
+                  test -s "$ARCHIVE"
+                  echo "SOURCE_SNAPSHOT_BYTES=$(stat -c %s "$ARCHIVE")"
+                  sha256sum "$ARCHIVE"
+                  echo "SOURCE_SNAPSHOT_END=$(date -u +%FT%TZ)"
             - persist_to_workspace:
                 root: .
                 paths:
-                  - afterbird-chromium/src
-                  - afterbird-chromium/.gclient
+                  - afterbird-source.tar.zst
                   - afterbird-delta
                   - depot_tools
                   - current-checkpoint.meta
