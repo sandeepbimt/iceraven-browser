@@ -628,10 +628,45 @@ jobs:
               echo "Running autoninja/Siso with strict remote execution for at most $REMAINING seconds." | tee -a "$DIAG"
               export SISO_LIMITS=local=8,remote=80
               set +e
-              timeout --signal=INT --kill-after=90s "$REMAINING"s \
+              # Start the build in its own process group so a failed early
+              # remote-execution gate can stop the whole build, not just tee.
+              setsid -w timeout --signal=INT --kill-after=90s "$REMAINING"s \
                 bash -c 'set -o pipefail; autoninja -strict_remote -metrics_json sandfox-stage-metrics.jsonl -C "$1" -j80 chrome_public_apk 2>&1 | tee "$2"' \
-                _ "$OUT_DIR" "$BUILD_LOG"
-              RET=$?
+                _ "$OUT_DIR" "$BUILD_LOG" &
+              BUILD_PID=$!
+              REMOTE_GATE_SECONDS=240
+              REMOTE_GATE_INTERVAL=15
+              REMOTE_GATE_ELAPSED=0
+              REMOTE_GATE_PASSED=false
+              while [ "$REMOTE_GATE_ELAPSED" -lt "$REMOTE_GATE_SECONDS" ]; do
+                if grep -hi -E 'is_local=false|use reapi "remote\\.buildbuddy\\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | grep -q .; then
+                  REMOTE_GATE_PASSED=true
+                  echo "EARLY_REMOTE_EXECUTION_GATE=PASS elapsed_seconds=$REMOTE_GATE_ELAPSED" | tee -a "$DIAG"
+                  break
+                fi
+                if ! kill -0 "$BUILD_PID" 2>/dev/null; then
+                  break
+                fi
+                sleep "$REMOTE_GATE_INTERVAL"
+                REMOTE_GATE_ELAPSED=$((REMOTE_GATE_ELAPSED + REMOTE_GATE_INTERVAL))
+              done
+              if [ "$REMOTE_GATE_PASSED" != true ] && kill -0 "$BUILD_PID" 2>/dev/null; then
+                echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; no runtime REAPI evidence within $REMOTE_GATE_SECONDS seconds; stopping build to avoid wasting the stage." | tee -a "$DIAG" >&2
+                kill -INT -- "-$BUILD_PID" 2>/dev/null || true
+                sleep 10
+                kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
+                sleep 5
+                kill -KILL -- "-$BUILD_PID" 2>/dev/null || true
+                wait "$BUILD_PID"
+                RET=125
+              else
+                wait "$BUILD_PID"
+                RET=$?
+                if [ "$REMOTE_GATE_PASSED" != true ] && [ ! -s "$APK" ]; then
+                  echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; build ended before remote execution could be verified." | tee -a "$DIAG" >&2
+                  RET=125
+                fi
+              fi
               set -e
             fi
             if [ -s "$APK" ]; then
