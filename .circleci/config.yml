@@ -23,6 +23,13 @@ jobs:
           steps:
             - attach_workspace:
                 at: .
+
+      - when:
+          condition:
+            equal: [3, << parameters.stage_index >>]
+          steps:
+            - attach_workspace:
+                at: .
       - run:
           name: Validate checkpoint archive mechanics
           command: |
@@ -554,6 +561,14 @@ workflows:
           stage_index: 2
           requires:
             - c4-afterbird-stage-1
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-3
+          stage_index: 3
+          requires:
+            - c4-afterbird-stage-2
           filters:
             branches:
               only: sandfox/checkpoint-stage-v1
