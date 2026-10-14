@@ -391,7 +391,7 @@ jobs:
               export SISO_LIMITS="local=8,remote=80"
               set +e
               timeout -s INT -k 90s "${REMAINING}s" \
-                siso.py ninja -re_cache_enable_write=true -C "$OUT_DIR" -remote_jobs=80 chrome_public_apk \
+                python3 "$CIRCLE_WORKING_DIRECTORY/depot_tools/siso.py" ninja -re_cache_enable_write=true -C "$OUT_DIR" -remote_jobs=80 chrome_public_apk \
                 > >(tee -a "$BUILD_LOG") 2>&1
               RET=$?
               set -e
