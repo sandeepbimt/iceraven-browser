@@ -523,12 +523,6 @@ jobs:
             echo "STAGE_START_OBJECT_COUNT=$(printenv STAGE_START_OBJECTS || true)"
             echo "STAGE_START_BUILD_OUTPUT_COUNT=$(printenv STAGE_START_OUTPUTS || true)"
 
-      - when:
-          condition:
-            equal: [1, << parameters.stage_index >>]
-          steps:
-
-
       - run:
           name: Build bounded Siso slice and save checkpoint
           command: |
