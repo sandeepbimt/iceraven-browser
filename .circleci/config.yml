@@ -27,12 +27,14 @@ jobs:
           name: Validate checkpoint archive mechanics
           command: |
             set -eux
+            if ! command -v zstd >/dev/null 2>&1; then
+              sudo apt-get update -qq
+              sudo apt-get install -y zstd
+            fi
             if [ "<< parameters.stage_index >>" -ne 1 ]; then
-              echo "Archive self-test ran in stage 1; actual checkpoint restore is checked in every stage."
+              echo "Stage 2: zstd is available; the archive self-test ran in stage 1."
               exit 0
             fi
-            sudo apt-get update -qq
-            sudo apt-get install -y zstd
             T="$(mktemp -d)"
             trap 'rm -rf "$T"' EXIT
             mkdir -p "$T/input/out/afterbird_production/obj/sample" "$T/restore"
@@ -180,10 +182,8 @@ jobs:
           name: Install Chromium host build dependencies
           command: |
             set -eux
-            if [ "<< parameters.stage_index >>" -ne 1 ]; then
-              echo "Stage 2: reusing the exact source tree from stage 1; skipping fresh setup."
-              exit 0
-            fi
+            # Each CircleCI job gets a fresh VM; source/build outputs persist,
+            # but apt-installed host libraries do not.
             export DEBIAN_FRONTEND=noninteractive
             cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             ./build/install-build-deps.sh --no-chromeos-fonts
