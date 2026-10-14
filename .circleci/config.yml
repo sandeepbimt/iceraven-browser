@@ -776,7 +776,9 @@ jobs:
               echo "=== END OF STAGE DIAGNOSTICS ==="
             } >> "$DIAG"
             cat "$DIAG"
-          teardown:
+      - when:
+          condition: always
+          steps:
             - run:
                 name: Emit durable diagnostics on failure or timeout
                 command: |
