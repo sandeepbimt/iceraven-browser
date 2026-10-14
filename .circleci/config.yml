@@ -50,7 +50,6 @@ jobs:
               > "$HELPER"
             chmod 700 "$HELPER"
             echo 'export SISO_CREDENTIAL_HELPER=/tmp/sandfox-buildbuddy-credential-helper.py' >> "$BASH_ENV"
-            echo 'export SISO_CREDENTIAL_HELPER=/tmp/sandfox-buildbuddy-credential-helper.py' >> "$BASH_ENV"
       - checkout
 
       - when:
