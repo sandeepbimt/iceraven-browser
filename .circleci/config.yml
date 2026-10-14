@@ -10,11 +10,45 @@ jobs:
     resource_class: large
     steps:
       - run:
-          name: Record stage start time
+          name: Record stage start time and validate BuildBuddy credentials
           command: |
-            set -eux
+            # Do not enable xtrace in this step: credentials must never appear in logs.
+            set -eu
             echo "export STAGE_START_TS=$(date +%s)" >> "$BASH_ENV"
             echo "STAGE_INDEX=<< parameters.stage_index >>"
+
+            if [ -z "${BUILDBUDDY_API_KEY:-}" ]; then
+              echo "MISSING_REQUIRED_SECRET=BUILDBUDDY_API_KEY" >&2
+              echo "Add this as a CircleCI project environment variable before running the staged build." >&2
+              exit 1
+            fi
+
+            cat > /tmp/sandfox-buildbuddy-credential-helper.py <<'PY'
+            #!/usr/bin/env python3
+            import json
+            import os
+            import sys
+
+            try:
+                request = json.load(sys.stdin)
+            except Exception:
+                print("Siso credential helper received invalid JSON", file=sys.stderr)
+                sys.exit(1)
+
+            uri = str(request.get("uri", "")).lower()
+            if "remote.buildbuddy.io" not in uri:
+                print(json.dumps({"headers": {}}))
+                sys.exit(0)
+
+            api_key = os.environ.get("BUILDBUDDY_API_KEY", "")
+            if not api_key:
+                print("BUILDBUDDY_API_KEY is missing", file=sys.stderr)
+                sys.exit(1)
+
+            print(json.dumps({"headers": {"x-buildbuddy-api-key": [api_key]}}))
+            PY
+            chmod 700 /tmp/sandfox-buildbuddy-credential-helper.py
+            echo 'export SISO_CREDENTIAL_HELPER=/tmp/sandfox-buildbuddy-credential-helper.py' >> "$BASH_ENV"
       - checkout
 
       - when:
