@@ -57,14 +57,10 @@ jobs:
             echo "CHECKPOINT-SELF-TEST=PASS"
             echo "PAX nanosecond mtime preserved: $AFTER"
             echo "Both Siso state files were preserved."
-      - when:
-          condition:
-            equal: [2, << parameters.stage_index >>]
-          steps:
-            - restore_cache:
-                name: Restore stage-1 output checkpoint
-                keys:
-                  - sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-
+      - restore_cache:
+          name: Restore latest saved build-output checkpoint for this branch
+          keys:
+            - sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-
       - run:
           name: Measure build VM
           command: |
@@ -222,7 +218,7 @@ jobs:
             done
             git status --short
       - run:
-          name: Prepare fresh GN graph or restore the stage-1 checkpoint
+          name: Restore matching checkpoint or prepare fresh GN graph
           command: |
             set -eux
             export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
@@ -232,63 +228,77 @@ jobs:
             CHROMIUM_TAG="151.0.7922.38"
             AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
 
-            if [ "<< parameters.stage_index >>" -eq 1 ]; then
-              test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
-              test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
-              ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
-              CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
-              printf '%s\n' \
-                'schema=1' \
-                "chromium_tag=$CHROMIUM_TAG" \
-                "chromium_sha=$CHROMIUM_SHA" \
-                "afterbird_sha=$AFTERBIRD_SHA" \
-                "args_sha=$ARGS_SHA" \
-                'target=//chrome/android:chrome_public_apk' \
-                'out=out/afterbird_production' \
-                'target_cpu=arm64' \
-                > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
+            test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
+            test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
+            ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
+            CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
+            printf '%s\n' \
+              'schema=1' \
+              "chromium_tag=$CHROMIUM_TAG" \
+              "chromium_sha=$CHROMIUM_SHA" \
+              "afterbird_sha=$AFTERBIRD_SHA" \
+              "args_sha=$ARGS_SHA" \
+              'target=//chrome/android:chrome_public_apk' \
+              'out=out/afterbird_production' \
+              'target_cpu=arm64' \
+              > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
+
+            RESTORED="false"
+            if [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" ] \
+               && [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" ]; then
+              if cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" \
+                        "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"; then
+                echo "Checkpoint fingerprint matches pinned build inputs."
+                if tar -x -I 'zstd -T0 -d' \
+                     -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
+                  if [ -s "$OUT_DIR/build.ninja" ] \
+                     && [ -s "$OUT_DIR/args.gn" ] \
+                     && cmp -s "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn" \
+                     && [ -s "$OUT_DIR/.siso_fs_state" ] \
+                     && [ ! -e "$OUT_DIR/.siso_fs_state.journal" ]; then
+                    RESTORED="true"
+                  else
+                    echo "Checkpoint is missing build graph, matching args, clean Siso state, or journal-free shutdown."
+                    rm -rf "$OUT_DIR"
+                  fi
+                else
+                  echo "Checkpoint extraction failed; rejecting it."
+                  rm -rf "$OUT_DIR"
+                fi
+              else
+                echo "Checkpoint fingerprint mismatch; refusing stale outputs."
+                diff -u "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" \
+                        "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" || true
+              fi
+            else
+              echo "No previous checkpoint was found in CircleCI cache."
+            fi
+
+            if [ "$RESTORED" = "true" ]; then
+              echo "CHECKPOINT_RESTORE=ACCEPTED"
+              echo "CHECKPOINT_ARCHIVE_SHA256=$(sha256sum "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" | awk '{print $1}')"
+              echo "RESTORED_SISO_STATE_SHA256=$(sha256sum "$OUT_DIR/.siso_fs_state" | awk '{print $1}')"
+              RESTORED_OBJECTS="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
+              echo "RESTORED_OBJECT_COUNT=$RESTORED_OBJECTS"
+            elif [ "<< parameters.stage_index >>" -eq 1 ]; then
               mkdir -p "$OUT_DIR"
               cp "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
               cd "$SRC_DIR"
               gn gen "$OUT_DIR"
-              echo "CHECKPOINT_RESTORED=false"
-              echo "GN_SETUP=FRESH"
+              echo "CHECKPOINT_RESTORE=MISS_OR_REJECTED; GN_SETUP=FRESH"
             else
-              test -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
-              test -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"
-              test -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst"
-              cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"
-              echo "Checkpoint identity matches; extracting output into the preserved stage-1 source tree."
-              tar -x -I 'zstd -T0 -d' -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"
-              test -s "$OUT_DIR/build.ninja"
-              test -s "$OUT_DIR/args.gn"
-              cmp -s "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
-              if [ -s "$OUT_DIR/.siso_fs_state" ]; then
-                echo "SISO_STATE_RESTORE=present"
-              else
-                OBJ_COUNT="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
-                if [ "$OBJ_COUNT" -gt 0 ]; then
-                  echo "Checkpoint contains compiled objects but no Siso state; refusing false resume." >&2
-                  exit 1
-                fi
-                echo "SISO_STATE_RESTORE=absent_no_prior_objects"
-              fi
-              if [ -e "$OUT_DIR/.siso_fs_state.journal" ]; then
-                echo "Siso journal remains after stage-1 shutdown; refusing this checkpoint." >&2
-                exit 1
-              fi
-              echo "CHECKPOINT_RESTORED=true"
-              echo "CHECKPOINT_RESTORE=ACCEPTED"
-              ls -lh "$OUT_DIR"/.siso_fs_state* 2>&1 || true
+              echo "Stage 2 could not restore a valid stage-1 checkpoint; refusing a false resume." >&2
+              exit 1
             fi
+
             if [ "<< parameters.stage_index >>" -eq 1 ]; then
-              echo "export CHECKPOINT_RESTORED=false" >> "$BASH_ENV"
+              echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
             else
-              echo "export CHECKPOINT_RESTORED=true" >> "$BASH_ENV"
+              echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
             fi
             echo "=== OUTPUT SIZE ==="
             du -sh "$OUT_DIR"
-            echo "=== DISK AFTER GN / RESTORE ==="
+            echo "=== DISK AFTER RESTORE / GN ==="
             df -hT
 
       - run:
@@ -377,6 +387,12 @@ jobs:
               set -e
             fi
             echo "autoninja_exit_code=$RET" | tee -a "$DIAG"
+            SKIP_SUMMARY="$(grep -h -E 'local:[0-9]+ .*skip=[0-9]+' "$BUILD_LOG" "$OUT_DIR/siso.INFO" 2>/dev/null | tail -n 1 || true)"
+            if [ -n "$SKIP_SUMMARY" ]; then
+              echo "SISO_ACTION_SUMMARY=$SKIP_SUMMARY" | tee -a "$DIAG"
+            else
+              echo "SISO_ACTION_SUMMARY=not-found-in-build-log-or-siso.INFO" | tee -a "$DIAG"
+            fi
             if [ "$RET" -ne 0 ] && [ "$RET" -ne 124 ]; then
               echo "BUILD_FAILURE: autoninja returned $RET; not treating this as a time-slice completion." | tee -a "$DIAG"
               if [ -s "$OUT_DIR/.siso_failed_targets" ]; then
@@ -501,16 +517,12 @@ jobs:
             - store_artifacts:
                 path: siso_failed_targets.txt
                 destination: checkpoint-stage-<< parameters.stage_index >>/siso_failed_targets.txt
-      - when:
-          condition:
-            equal: [1, << parameters.stage_index >>]
-          steps:
-            - save_cache:
-                name: Save stage-1 build-output checkpoint
-                key: sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-{{ .BuildNum }}-stage-1
-                paths:
-                  - checkpoint.tar.zst
-                  - checkpoint.meta
+      - save_cache:
+          name: Save latest build-output checkpoint for the next stage or workflow
+          key: sandfox-c4-siso-checkpoint-v1-{{ .Branch }}-{{ .BuildNum }}-stage-<< parameters.stage_index >>
+          paths:
+            - checkpoint.tar.zst
+            - checkpoint.meta
       - run:
           name: Record APK status
           command: |
