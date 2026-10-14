@@ -237,16 +237,16 @@ jobs:
               test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
               ARGS_SHA="$(sha256sum "$AFTERBIRD_DIR/.build/args/release.gn" | awk '{print $1}')"
               CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
-              cat > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" <<EOF
-            schema=1
-            chromium_tag=$CHROMIUM_TAG
-            chromium_sha=$CHROMIUM_SHA
-            afterbird_sha=$AFTERBIRD_SHA
-            args_sha=$ARGS_SHA
-            target=//chrome/android:chrome_public_apk
-            out=out/afterbird_production
-            target_cpu=arm64
-            EOF
+              printf '%s\n' \
+                'schema=1' \
+                "chromium_tag=$CHROMIUM_TAG" \
+                "chromium_sha=$CHROMIUM_SHA" \
+                "afterbird_sha=$AFTERBIRD_SHA" \
+                "args_sha=$ARGS_SHA" \
+                'target=//chrome/android:chrome_public_apk' \
+                'out=out/afterbird_production' \
+                'target_cpu=arm64' \
+                > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
               mkdir -p "$OUT_DIR"
               cp "$AFTERBIRD_DIR/.build/args/release.gn" "$OUT_DIR/args.gn"
               cd "$SRC_DIR"
