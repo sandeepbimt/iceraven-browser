@@ -385,10 +385,13 @@ jobs:
               echo "Setup consumed the stage wall budget; saving the prepared GN graph." | tee -a "$DIAG"
               RET=124
             else
-              echo "Running autoninja for at most ${REMAINING}s under a 47-minute stage wall budget." | tee -a "$DIAG"
+              echo "Running direct Siso REAPI build for at most ${REMAINING}s under a 47-minute stage wall budget." | tee -a "$DIAG"
+              export SISO_REAPI_ADDRESS="${SISO_REAPI_ADDRESS:-remote.buildbuddy.io:443}"
+              export SISO_REAPI_INSTANCE="${SISO_REAPI_INSTANCE:-default}"
+              export SISO_LIMITS="local=8,remote=80"
               set +e
               timeout -s INT -k 90s "${REMAINING}s" \
-                autoninja -C "$OUT_DIR" -j2 chrome_public_apk \
+                siso.py ninja -re_cache_enable_write=true -C "$OUT_DIR" -remote_jobs=80 chrome_public_apk \
                 > >(tee -a "$BUILD_LOG") 2>&1
               RET=$?
               set -e
