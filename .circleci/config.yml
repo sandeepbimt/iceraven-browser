@@ -697,6 +697,7 @@ jobs:
 
       - run:
           name: Build bounded Siso slice and save checkpoint
+          no_output_timeout: 50m
           command: |
             set -eu
             export PATH="$CIRCLE_WORKING_DIRECTORY/depot_tools:$PATH"
