@@ -797,34 +797,37 @@ jobs:
               METRICS_PRESENT=true
               cp "$METRICS_FILE" "$METRICS_ARTIFACT"
               METRIC_RECORDS="$(wc -l < "$METRICS_FILE" | tr -d ' ')"
-              python3 - "$METRICS_ARTIFACT" > "$COUNT_FILE" <<'PY'
-            import json
-            import sys
-
-            action_records = 0
-            cached = 0
-            local = 0
-            no_exec = 0
-            with open(sys.argv[1], encoding="utf-8") as source:
-                for line_number, line in enumerate(source, 1):
-                    if not line.strip():
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError as exc:
-                        raise SystemExit(f"Invalid Siso JSONL at line {line_number}: {exc}")
-                    if not isinstance(record, dict) or "step_id" not in record or not isinstance(record.get("outputs"), list):
-                        continue
-                    action_records += 1
-                    cached += record.get("cached") is True
-                    local += record.get("is_local") is True
-                    no_exec += record.get("no_exec") is True
-
-            print(f"metric_action_record_count={action_records}")
-            print(f"cache_action_count={cached}")
-            print(f"local_action_count={local}")
-            print(f"no_exec_action_count={no_exec}")
-            PY
+              METRIC_PARSER="$CIRCLE_WORKING_DIRECTORY/parse-siso-metrics.py"
+              printf '%s\n' \
+                '#!/usr/bin/env python3' \
+                'import json' \
+                'import sys' \
+                '' \
+                'action_records = 0' \
+                'cached = 0' \
+                'local = 0' \
+                'no_exec = 0' \
+                'with open(sys.argv[1], encoding="utf-8") as source:' \
+                '    for line_number, line in enumerate(source, 1):' \
+                '        if not line.strip():' \
+                '            continue' \
+                '        try:' \
+                '            record = json.loads(line)' \
+                '        except json.JSONDecodeError as exc:' \
+                '            raise SystemExit(f"Invalid Siso JSONL at line {line_number}: {exc}")' \
+                '        if not isinstance(record, dict) or "step_id" not in record or not isinstance(record.get("outputs"), list):' \
+                '            continue' \
+                '        action_records += 1' \
+                '        cached += record.get("cached") is True' \
+                '        local += record.get("is_local") is True' \
+                '        no_exec += record.get("no_exec") is True' \
+                '' \
+                'print(f"metric_action_record_count={action_records}")' \
+                'print(f"cache_action_count={cached}")' \
+                'print(f"local_action_count={local}")' \
+                'print(f"no_exec_action_count={no_exec}")' \
+                > "$METRIC_PARSER"
+              python3 "$METRIC_PARSER" "$METRICS_ARTIFACT" > "$COUNT_FILE"
               METRIC_ACTION_RECORDS="$(sed -n 's/^metric_action_record_count=//p' "$COUNT_FILE" | tail -n 1)"
               CACHE_ACTIONS="$(sed -n 's/^cache_action_count=//p' "$COUNT_FILE" | tail -n 1)"
               LOCAL_ACTIONS="$(sed -n 's/^local_action_count=//p' "$COUNT_FILE" | tail -n 1)"
