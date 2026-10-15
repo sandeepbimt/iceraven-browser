@@ -130,6 +130,21 @@ jobs:
             echo "CHECKPOINT-SELF-TEST=PASS"
             echo "PAX nanosecond mtime preserved: $AFTER"
             echo "Both Siso state files were preserved."
+
+            mkdir -p "$T/journal-only-input/out/afterbird_production/obj/sample" "$T/journal-only-restore"
+            printf 'build graph payload\n' > "$T/journal-only-input/out/afterbird_production/build.ninja"
+            printf 'GN args payload\n' > "$T/journal-only-input/out/afterbird_production/args.gn"
+            printf 'journal payload\n' > "$T/journal-only-input/out/afterbird_production/.siso_fs_state.journal"
+            printf 'accumulated object payload\n' > "$T/journal-only-input/out/afterbird_production/obj/sample/sample.o"
+            tar -c -I 'zstd -T1 -3' --format=posix --pax-option='delete=atime,delete=ctime' -f "$T/journal-only.tar.zst" -C "$T/journal-only-input" out/afterbird_production
+            tar -x -I 'zstd -T1 -d' -f "$T/journal-only.tar.zst" -C "$T/journal-only-restore"
+            JOURNAL_ONLY_OUT="$T/journal-only-restore/out/afterbird_production"
+            test ! -e "$JOURNAL_ONLY_OUT/.siso_fs_state"
+            test -s "$JOURNAL_ONLY_OUT/.siso_fs_state.journal"
+            test -s "$JOURNAL_ONLY_OUT/build.ninja"
+            test -s "$JOURNAL_ONLY_OUT/args.gn"
+            test -s "$JOURNAL_ONLY_OUT/obj/sample/sample.o"
+            echo "CHECKPOINT-JOURNAL-ONLY-SELF-TEST=PASS; graph, args, journal, and compiled output survive without a base state."
       - when:
           condition:
             equal: [1, << parameters.stage_index >>]
@@ -137,7 +152,7 @@ jobs:
             - restore_cache:
                 name: Restore latest prior-workflow checkpoint for stage 1
                 keys:
-                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-
       - when:
           condition:
             equal: [2, << parameters.stage_index >>]
@@ -145,7 +160,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 1 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
       - when:
           condition:
             equal: [3, << parameters.stage_index >>]
@@ -153,7 +168,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 2 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
       - when:
           condition:
             equal: [4, << parameters.stage_index >>]
@@ -161,7 +176,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 3 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
       - when:
           condition:
             equal: [5, << parameters.stage_index >>]
@@ -169,7 +184,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 4 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -433,8 +448,9 @@ jobs:
             CLANG_COMPILER_GNI_SHA="$(sha256sum "$SRC_DIR/build/config/compiler/compiler.gni" | awk '{print $1}')"
             CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
             printf '%s\n' \
-              'schema=4' \
+              'schema=5' \
               'source_timestamp_policy=epoch_946684800_full_tree_v1' \
+              'siso_state_policy=journal_only_recovery_v1' \
               "clang_compiler_gni_sha=$CLANG_COMPILER_GNI_SHA" \
               "chromium_tag=$CHROMIUM_TAG" \
               "chromium_sha=$CHROMIUM_SHA" \
@@ -449,6 +465,7 @@ jobs:
               > "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
 
             RESTORED="false"
+            CHECKPOINT_STATE_MODE="FRESH"
             if [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" ] \
                && [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" ]; then
               if cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" \
@@ -456,20 +473,32 @@ jobs:
                 echo "Checkpoint fingerprint matches pinned build inputs."
                 if tar -x -I 'zstd -T0 -d' \
                      -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
-                  # Siso's normal startup reconciles a closed journal against
-                  # the persisted base state, saves the reconciled state, and
-                  # starts a fresh journal. Keep both files in the checkpoint;
-                  # never run a speculative dry-run or delete the journal here.
+                  STATE_FILE="$OUT_DIR/.siso_fs_state"
+                  JOURNAL_FILE="$STATE_FILE.journal"
                   if [ -s "$OUT_DIR/build.ninja" ] \
                      && [ -s "$OUT_DIR/args.gn" ] \
-                     && cmp -s "$ARGS_FILE" "$OUT_DIR/args.gn" \
-                     && [ -s "$OUT_DIR/.siso_fs_state" ]; then
-                    RESTORED="true"
-                    if [ -s "$OUT_DIR/.siso_fs_state.journal" ]; then
-                      echo "CHECKPOINT_JOURNAL=DEFERRED_TO_SISO_STARTUP"
+                     && cmp -s "$ARGS_FILE" "$OUT_DIR/args.gn"; then
+                    if [ -s "$STATE_FILE" ]; then
+                      RESTORED="true"
+                      if [ -s "$JOURNAL_FILE" ]; then
+                        CHECKPOINT_STATE_MODE="BASE_AND_JOURNAL"
+                        echo "CHECKPOINT_JOURNAL=DEFERRED_TO_SISO_STARTUP; Siso must reconcile the restored journal."
+                      else
+                        CHECKPOINT_STATE_MODE="BASE_ONLY"
+                      fi
+                    elif [ -s "$JOURNAL_FILE" ]; then
+                      # Pinned Siso supports a missing base: it replays a valid journal
+                      # into an empty state and saves the recovered base. Preserve outputs.
+                      RESTORED="true"
+                      CHECKPOINT_STATE_MODE="JOURNAL_ONLY"
+                      echo "CHECKPOINT_RESTORE=JOURNAL_ONLY_RECOVERY_REQUIRED"
+                      echo "CHECKPOINT_JOURNAL_BYTES=$(stat -c '%s' "$JOURNAL_FILE")"
+                    else
+                      echo "Checkpoint has matching graph/args but neither a base state nor a nonempty journal."
+                      rm -rf "$OUT_DIR"
                     fi
                   else
-                    echo "Checkpoint is missing build graph, matching args, or a valid Siso base state."
+                    echo "Checkpoint is missing build graph or matching GN args."
                     rm -rf "$OUT_DIR"
                   fi
                 else
@@ -486,9 +515,14 @@ jobs:
             fi
 
             if [ "$RESTORED" = "true" ]; then
-              echo "CHECKPOINT_RESTORE=ACCEPTED"
+              echo "CHECKPOINT_RESTORE=ACCEPTED mode=$CHECKPOINT_STATE_MODE"
               echo "CHECKPOINT_ARCHIVE_SHA256=$(sha256sum "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" | awk '{print $1}')"
-              echo "RESTORED_SISO_STATE_SHA256=$(sha256sum "$OUT_DIR/.siso_fs_state" | awk '{print $1}')"
+              if [ -s "$OUT_DIR/.siso_fs_state" ]; then
+                echo "RESTORED_SISO_STATE_SHA256=$(sha256sum "$OUT_DIR/.siso_fs_state" | awk '{print $1}')"
+              fi
+              if [ -s "$OUT_DIR/.siso_fs_state.journal" ]; then
+                echo "RESTORED_SISO_JOURNAL_SHA256=$(sha256sum "$OUT_DIR/.siso_fs_state.journal" | awk '{print $1}')"
+              fi
               RESTORED_OBJECTS="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
               echo "RESTORED_OBJECT_COUNT=$RESTORED_OBJECTS"
             elif [ "<< parameters.stage_index >>" -eq 1 ]; then
@@ -497,11 +531,25 @@ jobs:
               cp "$ARGS_FILE" "$OUT_DIR/args.gn"
               cd "$SRC_DIR"
               gn gen "$OUT_DIR"
+              CHECKPOINT_STATE_MODE="FRESH"
               echo "CHECKPOINT_RESTORE=MISS_OR_REJECTED; GN_SETUP=FRESH"
             else
               echo "Stage << parameters.stage_index >> could not restore a valid matching checkpoint; refusing a false resume." >&2
               exit 1
             fi
+
+            echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
+            echo "export CHECKPOINT_STATE_MODE=$CHECKPOINT_STATE_MODE" >> "$BASH_ENV"
+            STAGE_START_OBJECTS="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
+            STAGE_START_OUTPUTS="$(find "$OUT_DIR/obj" "$OUT_DIR/gen" "$OUT_DIR/apks" -type f 2>/dev/null | wc -l | tr -d ' ')"
+            echo "export STAGE_START_OBJECTS=$STAGE_START_OBJECTS" >> "$BASH_ENV"
+            echo "export STAGE_START_OUTPUTS=$STAGE_START_OUTPUTS" >> "$BASH_ENV"
+            echo "STAGE_START_OBJECT_COUNT=$STAGE_START_OBJECTS"
+            echo "STAGE_START_BUILD_OUTPUT_COUNT=$STAGE_START_OUTPUTS"
+            echo "=== OUTPUT SIZE ==="
+            du -sh "$OUT_DIR"
+            echo "=== DISK AFTER RESTORE / GN ==="
+            df -hT
 
             FRONTIER_FILE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-cumulative.txt"
             FRONTIER_BEFORE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-before.txt"
@@ -674,6 +722,7 @@ jobs:
               echo "stage_wall_budget_seconds=$MAX_STAGE_WALL_SECONDS"
               echo "remaining_compile_seconds=$REMAINING"
               echo "checkpoint_restored=${CHECKPOINT_RESTORED:-unknown}"
+              echo "checkpoint_state_mode=${CHECKPOINT_STATE_MODE:-unknown}"
               echo "chromium_tag=151.0.7922.38"
               echo "afterbird_sha=5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
               echo "source_timestamp_policy=epoch_946684800_full_tree_v1"
@@ -694,10 +743,51 @@ jobs:
             METRICS_PRESENT=false
             REMOTE_EXEC_LOG_COUNT=0
             HANDOVER_GATE_FAILED=false
+            JOURNAL_RECOVERY_FAILED=false
+            JOURNAL_RECOVERY_EXPECTED=false
+            JOURNAL_RECOVERY_PASSED=false
+            CHECKPOINT_STATE_MODE="${CHECKPOINT_STATE_MODE:-UNKNOWN}"
+            SISO_INFO_FILE="$OUT_DIR/siso.INFO"
+            SISO_INFO_BASELINE="$CIRCLE_WORKING_DIRECTORY/siso.INFO.before-stage"
+            if [ -s "$SISO_INFO_FILE" ]; then
+              cp "$SISO_INFO_FILE" "$SISO_INFO_BASELINE"
+            else
+              : > "$SISO_INFO_BASELINE"
+            fi
+            case "$CHECKPOINT_STATE_MODE" in
+              JOURNAL_ONLY|BASE_AND_JOURNAL) JOURNAL_RECOVERY_EXPECTED=true ;;
+            esac
             OBJECTS_BEFORE="$(printenv STAGE_START_OBJECTS 2>/dev/null || true)"
             OUTPUTS_BEFORE="$(printenv STAGE_START_OUTPUTS 2>/dev/null || true)"
             [ -n "$OBJECTS_BEFORE" ] || OBJECTS_BEFORE=0
             [ -n "$OUTPUTS_BEFORE" ] || OUTPUTS_BEFORE=0
+            current_siso_info_lines() {
+              [ -f "$SISO_INFO_FILE" ] || return 0
+              if cmp -s "$SISO_INFO_BASELINE" "$SISO_INFO_FILE"; then
+                return 0
+              fi
+              diff -U0 "$SISO_INFO_BASELINE" "$SISO_INFO_FILE" 2>/dev/null | sed -n '/^+/ { /^+++/d; s/^+//; p; }' || true
+            }
+            fresh_siso_info_matches() {
+              FRESH_SISO_PATTERN="$1"
+              current_siso_info_lines | grep -Eiq "$FRESH_SISO_PATTERN"
+            }
+            journal_recovery_log_seen() {
+              if grep -Eiq 'reconcile from journal [1-9][0-9]* entries' "$BUILD_LOG" 2>/dev/null; then
+                return 0
+              fi
+              fresh_siso_info_matches 'reconcile from journal [1-9][0-9]* entries'
+            }
+            remote_exec_seen() {
+              REMOTE_SIGNATURE_PATTERN='is_local=false|use reapi "remote\\.buildbuddy\\.io:443"|step state: remote exec|exec remote execute'
+              if grep -hi -E "$REMOTE_SIGNATURE_PATTERN" "$BUILD_LOG" 2>/dev/null | grep -q .; then
+                return 0
+              fi
+              if fresh_siso_info_matches "$REMOTE_SIGNATURE_PATTERN"; then
+                return 0
+              fi
+              grep -Eq '"is_remote"[[:space:]]*:[[:space:]]*true' "$OUT_DIR/sandfox-stage-metrics.jsonl" 2>/dev/null
+            }
             rm -f "$METRICS_FILE"
             : > "$METRICS_ARTIFACT"
             : > "$COUNT_FILE"
@@ -727,8 +817,24 @@ jobs:
                   HANDOVER_GATE_FAILED=true
                   break
                 fi
-                if grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | grep -q . \
-                   || grep -Eq '"is_remote"[[:space:]]*:[[:space:]]*true' "$OUT_DIR/sandfox-stage-metrics.jsonl" 2>/dev/null; then
+                if [ "$JOURNAL_RECOVERY_EXPECTED" = true ] && [ "$JOURNAL_RECOVERY_PASSED" != true ]; then
+                  if journal_recovery_log_seen; then
+                    if [ -s "$OUT_DIR/.siso_fs_state" ]; then
+                      JOURNAL_RECOVERY_PASSED=true
+                      echo "SISO_JOURNAL_RECOVERY=PASS mode=$CHECKPOINT_STATE_MODE; current-stage journal reconciliation created a valid base state." | tee -a "$DIAG"
+                    fi
+                  elif remote_exec_seen; then
+                    echo "SISO_JOURNAL_RECOVERY=FAIL; remote execution began before current-stage journal reconciliation was confirmed. Stopping to prevent a silent cold resume." | tee -a "$DIAG" >&2
+                    JOURNAL_RECOVERY_FAILED=true
+                    break
+                  fi
+                fi
+                if remote_exec_seen; then
+                  if [ "$JOURNAL_RECOVERY_EXPECTED" = true ] && [ "$JOURNAL_RECOVERY_PASSED" != true ]; then
+                    echo "SISO_JOURNAL_RECOVERY=FAIL; refusing to accept remote work without confirmed journal replay." | tee -a "$DIAG" >&2
+                    JOURNAL_RECOVERY_FAILED=true
+                    break
+                  fi
                   REMOTE_GATE_PASSED=true
                   echo "EARLY_REMOTE_EXECUTION_GATE=PASS elapsed_seconds=$REMOTE_GATE_ELAPSED" | tee -a "$DIAG"
                   break
@@ -739,7 +845,7 @@ jobs:
                 sleep "$REMOTE_GATE_INTERVAL"
                 REMOTE_GATE_ELAPSED=$((REMOTE_GATE_ELAPSED + REMOTE_GATE_INTERVAL))
               done
-              if [ "$HANDOVER_GATE_FAILED" = true ]; then
+              if [ "$HANDOVER_GATE_FAILED" = true ] || [ "$JOURNAL_RECOVERY_FAILED" = true ]; then
                 kill -INT -- "-$BUILD_PID" 2>/dev/null || true
                 sleep 5
                 kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
@@ -748,7 +854,7 @@ jobs:
                 wait "$BUILD_PID"
                 RET=125
               elif [ "$REMOTE_GATE_PASSED" != true ] && kill -0 "$BUILD_PID" 2>/dev/null; then
-                echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; no runtime REAPI evidence within $REMOTE_GATE_SECONDS seconds; stopping build to avoid wasting the stage." | tee -a "$DIAG" >&2
+                echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; no current-stage REAPI evidence within $REMOTE_GATE_SECONDS seconds; stopping build to avoid wasting the stage." | tee -a "$DIAG" >&2
                 kill -INT -- "-$BUILD_PID" 2>/dev/null || true
                 sleep 10
                 kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
@@ -758,12 +864,12 @@ jobs:
                 RET=125
               else
                 if [ "$REMOTE_GATE_PASSED" = true ]; then
-                  echo "INCREMENTAL_HANDOVER_GATE=PASS; no Ninja regeneration before remote execution was confirmed." | tee -a "$DIAG"
+                  echo "INCREMENTAL_HANDOVER_GATE=PASS; no Ninja regeneration and current-stage remote execution confirmed." | tee -a "$DIAG"
                 fi
                 wait "$BUILD_PID"
                 RET=$?
                 if [ "$REMOTE_GATE_PASSED" != true ] && [ ! -s "$APK" ]; then
-                  echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; build ended before remote execution could be verified." | tee -a "$DIAG" >&2
+                  echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; build ended before current-stage remote execution could be verified." | tee -a "$DIAG" >&2
                   RET=125
                 fi
               fi
@@ -837,7 +943,12 @@ jobs:
             fi
             # This counts distinct remote-execution log signatures, not actual
             # remote actions; Siso JSONL does not contain an is_remote field.
-            REMOTE_EXEC_LOG_COUNT="$(grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+            REMOTE_EXEC_LOG_COUNT="$(
+              {
+                grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$BUILD_LOG" 2>/dev/null || true
+                current_siso_info_lines | grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' || true
+              } | sort -u | wc -l | tr -d ' '
+            )"
             echo "SISO_METRIC_RECORD_COUNT=$METRIC_RECORDS" | tee -a "$DIAG"
             echo "SISO_METRIC_ACTION_RECORD_COUNT=$METRIC_ACTION_RECORDS" | tee -a "$DIAG"
             echo "SISO_CACHE_ACTION_RECORD_COUNT=$CACHE_ACTIONS" | tee -a "$DIAG"
@@ -891,9 +1002,16 @@ jobs:
               tail -n 80 "$BUILD_LOG" 2>&1 | tee -a "$DIAG" || true
               exit 1
             fi
-            if [ ! -s "$STATE" ]; then
-              echo "CHECKPOINT_SAVE=REJECTED reason=siso_base_state_missing" | tee -a "$DIAG"
-              tail -n 200 "$OUT_DIR/siso_output" 2>&1 | tee -a "$DIAG" || true
+            if [ "$JOURNAL_RECOVERY_FAILED" = true ]; then
+              echo "CHECKPOINT_SAVE=REJECTED reason=journal_only_recovery_gate_failed" | tee -a "$DIAG"
+              tail -n 100 "$BUILD_LOG" 2>&1 | tee -a "$DIAG" || true
+              tail -n 100 "$OUT_DIR/siso.INFO" 2>&1 | tee -a "$DIAG" || true
+              exit 1
+            fi
+            if [ "$JOURNAL_RECOVERY_EXPECTED" = true ] && [ "$JOURNAL_RECOVERY_PASSED" != true ]; then
+              echo "CHECKPOINT_SAVE=REJECTED reason=prior_siso_journal_recovery_not_confirmed" | tee -a "$DIAG"
+              tail -n 100 "$BUILD_LOG" 2>&1 | tee -a "$DIAG" || true
+              tail -n 100 "$OUT_DIR/siso.INFO" 2>&1 | tee -a "$DIAG" || true
               exit 1
             fi
             if [ "$HANDOVER_GATE_FAILED" = true ]; then
@@ -905,6 +1023,24 @@ jobs:
                 tail -n 80 "$BUILD_LOG" 2>/dev/null || true
               } >> "$DIAG"
               cat "$DIAG"
+              exit 1
+            fi
+            CHECKPOINT_SAVE_MODE=""
+            if [ -s "$STATE" ]; then
+              if [ -s "$JOURNAL" ]; then
+                CHECKPOINT_SAVE_MODE="BASE_AND_JOURNAL"
+              else
+                CHECKPOINT_SAVE_MODE="BASE_ONLY"
+              fi
+            elif [ -s "$JOURNAL" ]; then
+              # A closed journal is a supported recovery input for pinned Siso.
+              # Preserve all outputs and replay this journal at the next stage.
+              CHECKPOINT_SAVE_MODE="JOURNAL_ONLY"
+              echo "CHECKPOINT_SAVE_MODE=JOURNAL_ONLY; preserving journal and outputs for next-stage Siso reconciliation." | tee -a "$DIAG"
+              echo "CHECKPOINT_JOURNAL_BYTES=$(stat -c '%s' "$JOURNAL")" | tee -a "$DIAG"
+            else
+              echo "CHECKPOINT_SAVE=REJECTED reason=neither_siso_base_state_nor_nonempty_journal" | tee -a "$DIAG"
+              tail -n 200 "$OUT_DIR/siso_output" 2>&1 | tee -a "$DIAG" || true
               exit 1
             fi
             if [ -s "$JOURNAL" ]; then
@@ -933,7 +1069,7 @@ jobs:
             PACK_END="$(date +%s)"
             echo "checkpoint_pack_seconds=$((PACK_END - PACK_START))" | tee -a "$DIAG"
             echo "checkpoint_size_bytes=$(stat -c '%s' "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst")" | tee -a "$DIAG"
-            echo "CHECKPOINT_SAVE=PASS" | tee -a "$DIAG"
+            echo "CHECKPOINT_SAVE=PASS state_mode=$CHECKPOINT_SAVE_MODE" | tee -a "$DIAG"
             APK_PRESENT=false
             if [ -s "$APK" ]; then APK_PRESENT=true; fi
             printf '%s\n' \
@@ -953,6 +1089,10 @@ jobs:
               "prior_frontier_label_count=$FRONTIER_PRIOR_LABEL_COUNT" \
               "completed_frontier_label_count=$FRONTIER_COMPLETED_LABEL_COUNT" \
               "new_frontier_label_count=$FRONTIER_NEW_LABEL_COUNT" \
+              "checkpoint_state_mode=$CHECKPOINT_STATE_MODE" \
+              "checkpoint_save_state_mode=$CHECKPOINT_SAVE_MODE" \
+              "journal_recovery_expected=$JOURNAL_RECOVERY_EXPECTED" \
+              "journal_recovery_passed=$JOURNAL_RECOVERY_PASSED" \
               "strict_remote=enabled" \
               "checkpoint_save=PASS" \
               "apk_present=$APK_PRESENT" \
@@ -1041,7 +1181,7 @@ jobs:
 
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
-          key: sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
+          key: sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
           paths:
             - checkpoint.tar.zst
             - checkpoint.meta
