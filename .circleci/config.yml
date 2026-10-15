@@ -418,6 +418,21 @@ jobs:
                 echo "Checkpoint fingerprint matches pinned build inputs."
                 if tar -x -I 'zstd -T0 -d' \
                      -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
+                  # A timed-out Siso build can leave only its recovery journal.
+                  # Let Siso replay that journal in dry-run mode before deciding
+                  # whether the checkpoint is restorable; never delete the journal
+                  # or discard the checkpoint's compiled outputs blindly.
+                  if [ ! -s "$OUT_DIR/.siso_fs_state" ] \
+                     && [ -s "$OUT_DIR/.siso_fs_state.journal" ]; then
+                    echo "CHECKPOINT_JOURNAL_RECOVERY=START"
+                    set +e
+                    autoninja -n -C "$OUT_DIR" chrome_public_apk \
+                      > "$CIRCLE_WORKING_DIRECTORY/checkpoint-recovery.log" 2>&1
+                    RECOVERY_RET=$?
+                    set -e
+                    echo "CHECKPOINT_JOURNAL_RECOVERY_EXIT=$RECOVERY_RET"
+                    tail -n 60 "$CIRCLE_WORKING_DIRECTORY/checkpoint-recovery.log" || true
+                  fi
                   if [ -s "$OUT_DIR/build.ninja" ] \
                      && [ -s "$OUT_DIR/args.gn" ] \
                      && cmp -s "$ARGS_FILE" "$OUT_DIR/args.gn" \
