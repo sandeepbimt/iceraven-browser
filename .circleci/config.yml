@@ -455,29 +455,20 @@ jobs:
                 echo "Checkpoint fingerprint matches pinned build inputs."
                 if tar -x -I 'zstd -T0 -d' \
                      -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
-                  # A timed-out Siso build can leave only its recovery journal.
-                  # Let Siso replay that journal in dry-run mode before deciding
-                  # whether the checkpoint is restorable; never delete the journal
-                  # or discard the checkpoint's compiled outputs blindly.
-                  if [ ! -s "$OUT_DIR/.siso_fs_state" ] \
-                     && [ -s "$OUT_DIR/.siso_fs_state.journal" ]; then
-                    echo "CHECKPOINT_JOURNAL_RECOVERY=START"
-                    set +e
-                    autoninja -n -C "$OUT_DIR" chrome_public_apk \
-                      > "$CIRCLE_WORKING_DIRECTORY/checkpoint-recovery.log" 2>&1
-                    RECOVERY_RET=$?
-                    set -e
-                    echo "CHECKPOINT_JOURNAL_RECOVERY_EXIT=$RECOVERY_RET"
-                    tail -n 60 "$CIRCLE_WORKING_DIRECTORY/checkpoint-recovery.log" || true
-                  fi
+                  # Siso's normal startup reconciles a closed journal against
+                  # the persisted base state, saves the reconciled state, and
+                  # starts a fresh journal. Keep both files in the checkpoint;
+                  # never run a speculative dry-run or delete the journal here.
                   if [ -s "$OUT_DIR/build.ninja" ] \
                      && [ -s "$OUT_DIR/args.gn" ] \
                      && cmp -s "$ARGS_FILE" "$OUT_DIR/args.gn" \
-                     && [ -s "$OUT_DIR/.siso_fs_state" ] \
-                     && [ ! -e "$OUT_DIR/.siso_fs_state.journal" ]; then
+                     && [ -s "$OUT_DIR/.siso_fs_state" ]; then
                     RESTORED="true"
+                    if [ -s "$OUT_DIR/.siso_fs_state.journal" ]; then
+                      echo "CHECKPOINT_JOURNAL=DEFERRED_TO_SISO_STARTUP"
+                    fi
                   else
-                    echo "Checkpoint is missing build graph, matching args, clean Siso state, or journal-free shutdown."
+                    echo "Checkpoint is missing build graph, matching args, or a valid Siso base state."
                     rm -rf "$OUT_DIR"
                   fi
                 else
@@ -748,24 +739,6 @@ jobs:
 
             STATE="$OUT_DIR/.siso_fs_state"
             JOURNAL="$OUT_DIR/.siso_fs_state.journal"
-            # A timed-out build may exit cleanly but leave Siso's state only in
-            # its journal. Re-open Siso once in dry-run mode to replay/persist it
-            # before rejecting the checkpoint; never remove the journal manually.
-            if [ ! -s "$STATE" ] && [ -s "$JOURNAL" ] && [ "$SISO_FORCED_KILL" -eq 0 ]; then
-              echo "CHECKPOINT_JOURNAL_RECOVERY=START"
-              # autoninja's Android build-server helper requires SRC_DIR in its
-              # environment and the Chromium source tree as the working directory.
-              cd "$SRC_DIR"
-              export SRC_DIR
-              set +e
-              timeout --signal=INT --kill-after=10s 120s autoninja -n -C "$OUT_DIR" chrome_public_apk \
-                > "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" 2>&1
-              RECOVERY_RET=$?
-              set -e
-              echo "CHECKPOINT_JOURNAL_RECOVERY_EXIT=$RECOVERY_RET"
-              ls -lh "$STATE" "$JOURNAL" 2>&1 | tee -a "$DIAG" || true
-              tail -n 40 "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" || true
-            fi
             OBJECT_COUNT="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
             OUTPUT_COUNT="$(find "$OUT_DIR/obj" "$OUT_DIR/gen" "$OUT_DIR/apks" -type f 2>/dev/null | wc -l | tr -d ' ')"
             echo "object_file_count_before=$OBJECTS_BEFORE" | tee -a "$DIAG"
@@ -784,14 +757,13 @@ jobs:
               tail -n 80 "$BUILD_LOG" 2>&1 | tee -a "$DIAG" || true
               exit 1
             fi
-            if [ -e "$JOURNAL" ]; then
-              echo "CHECKPOINT_SAVE=REJECTED reason=siso_journal_still_present_after_shutdown" | tee -a "$DIAG"
+            if [ ! -s "$STATE" ]; then
+              echo "CHECKPOINT_SAVE=REJECTED reason=siso_base_state_missing" | tee -a "$DIAG"
               tail -n 200 "$OUT_DIR/siso_output" 2>&1 | tee -a "$DIAG" || true
               exit 1
             fi
-            if [ "$RET" -eq 124 ] && [ "$OBJECT_COUNT" -gt 0 ] && [ ! -s "$STATE" ]; then
-              echo "CHECKPOINT_SAVE=REJECTED reason=objects_exist_but_siso_state_missing" | tee -a "$DIAG"
-              exit 1
+            if [ -s "$JOURNAL" ]; then
+              echo "CHECKPOINT_JOURNAL=INCLUDED_FOR_SISO_STARTUP_RECONCILIATION" | tee -a "$DIAG"
             fi
             echo "Packing output with POSIX/PAX metadata; Siso journal is not excluded." | tee -a "$DIAG"
             PACK_START="$(date +%s)"
