@@ -717,7 +717,7 @@ jobs:
             if [ ! -s "$STATE" ] && [ -s "$JOURNAL" ] && [ "$SISO_FORCED_KILL" -eq 0 ]; then
               echo "CHECKPOINT_JOURNAL_RECOVERY=START"
               set +e
-              timeout --signal=INT --kill-after=10s 120s autoninja -n -C "$OUT_DIR" chrome_public_apk \\
+              timeout --signal=INT --kill-after=10s 120s autoninja -n -C "$OUT_DIR" chrome_public_apk \
                 > "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" 2>&1
               RECOVERY_RET=$?
               set -e
