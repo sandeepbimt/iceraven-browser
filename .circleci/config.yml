@@ -1198,3 +1198,114 @@ jobs:
             else
               printf 'BUILD_FINISHED=false\nCheckpoint saved; APK is not complete yet.\n' > "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
             fi
+            cat "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
+      - store_artifacts:
+          path: afterbird-baseline
+          destination: afterbird-baseline
+      - run:
+          name: Validate remote work, checkpoint progress, and five-stage APK limit
+          command: |
+            set -euo pipefail
+            STAGE_INDEX=<< parameters.stage_index >>
+            APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
+            RESULT="$CIRCLE_WORKING_DIRECTORY/stage-build-result.txt"
+            if [ -s "$APK" ]; then
+              echo "APK_GATE=PASS; ChromePublic.apk exists and is non-empty."
+              exit 0
+            fi
+            if [ ! -s "$RESULT" ]; then
+              echo "STAGE_GATE=FAIL; no durable stage-result record was produced." >&2
+              exit 1
+            fi
+            result_value() { sed -n "s/^$1=//p" "$RESULT" | tail -n 1; }
+            BUILD_EXIT="$(result_value build_exit_code)"
+            OBJECTS_BEFORE="$(result_value object_count_before)"
+            OBJECTS_AFTER="$(result_value object_count_after)"
+            OUTPUTS_BEFORE="$(result_value output_count_before)"
+            OUTPUTS_AFTER="$(result_value output_count_after)"
+            REMOTE_EXEC_LOG_SIGNATURES="$(result_value remote_exec_log_signature_count)"
+            CACHE_ACTIONS="$(result_value cache_action_count)"
+            LOCAL_ACTIONS="$(result_value local_action_count)"
+            NO_EXEC_ACTIONS="$(result_value no_exec_action_count)"
+            METRIC_ACTION_RECORDS="$(result_value metric_action_record_count)"
+            METRICS_PRESENT="$(result_value metrics_present)"
+            METRIC_RECORDS="$(result_value metric_record_count)"
+            PRIOR_FRONTIER_LABELS="$(result_value prior_frontier_label_count)"
+            COMPLETED_FRONTIER_LABELS="$(result_value completed_frontier_label_count)"
+            NEW_FRONTIER_LABELS="$(result_value new_frontier_label_count)"
+            STRICT_REMOTE="$(result_value strict_remote)"
+            CHECKPOINT_SAVE="$(result_value checkpoint_save)"
+            test "$CHECKPOINT_SAVE" = "PASS" || { echo "STAGE_GATE=FAIL; safe checkpoint missing." >&2; exit 1; }
+            test "$STRICT_REMOTE" = "enabled" || { echo "STAGE_GATE=FAIL; strict remote mode not enabled." >&2; exit 1; }
+            if [ "$BUILD_EXIT" -ne 124 ]; then
+              echo "STAGE_GATE=FAIL; no APK and build exit status $BUILD_EXIT (expected bounded timeout)." >&2
+              exit 1
+            fi
+            case "$OBJECTS_BEFORE:$OBJECTS_AFTER:$OUTPUTS_BEFORE:$OUTPUTS_AFTER:$REMOTE_EXEC_LOG_SIGNATURES:$CACHE_ACTIONS:$LOCAL_ACTIONS:$NO_EXEC_ACTIONS:$METRIC_ACTION_RECORDS:$METRIC_RECORDS:$PRIOR_FRONTIER_LABELS:$COMPLETED_FRONTIER_LABELS:$NEW_FRONTIER_LABELS" in
+              *[!0-9:]*|:*|*::*)
+                echo "STAGE_GATE=FAIL; progress counters missing or malformed." >&2
+                exit 1
+                ;;
+            esac
+            if [ "$METRICS_PRESENT" != "true" ] && [ "$REMOTE_EXEC_LOG_SIGNATURES" -le 0 ]; then
+              echo "STAGE_GATE=FAIL; no Siso metrics file and no remote-execution log evidence." >&2
+              exit 1
+            fi
+            if [ "$REMOTE_EXEC_LOG_SIGNATURES" -le 0 ]; then
+              echo "STAGE_GATE=FAIL; Siso logs do not prove REAPI execution occurred." >&2
+              exit 1
+            fi
+            if [ "$NEW_FRONTIER_LABELS" -le 0 ] && [ "$OUTPUTS_AFTER" -le "$OUTPUTS_BEFORE" ] && [ "$OBJECTS_AFTER" -le "$OBJECTS_BEFORE" ]; then
+              echo "STAGE_GATE=FAIL; no new completed action/output labels and no new output paths; refusing to spend another stage repeating work." >&2
+              echo "Frontier labels: prior=$PRIOR_FRONTIER_LABELS current=$COMPLETED_FRONTIER_LABELS new=$NEW_FRONTIER_LABELS" >&2
+              echo "Path counts: objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER" >&2
+              exit 1
+            fi
+            echo "STAGE_PROGRESS_GATE=PASS new_frontier_labels=$NEW_FRONTIER_LABELS current_unique_labels=$COMPLETED_FRONTIER_LABELS prior_cumulative_labels=$PRIOR_FRONTIER_LABELS objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER remote_log_signatures=$REMOTE_EXEC_LOG_SIGNATURES cache_action_records=$CACHE_ACTIONS local_action_records=$LOCAL_ACTIONS no_exec_action_records=$NO_EXEC_ACTIONS"
+            if [ "$STAGE_INDEX" -eq 5 ]; then
+              echo "MAX_STAGES_REACHED=5; APK was not produced." >&2
+              exit 1
+            fi
+            echo "STAGE_CONTINUATION=PASS; next stage will resume and must make useful progress."
+
+workflows:
+  c4-afterbird-staged-checkpoint-build:
+    jobs:
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-1
+          stage_index: 1
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-2
+          stage_index: 2
+          requires:
+            - c4-afterbird-stage-1
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-3
+          stage_index: 3
+          requires:
+            - c4-afterbird-stage-2
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-4
+          stage_index: 4
+          requires:
+            - c4-afterbird-stage-3
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
+      - c4-afterbird-staged-build:
+          name: c4-afterbird-stage-5
+          stage_index: 5
+          requires:
+            - c4-afterbird-stage-4
+          filters:
+            branches:
+              only: sandfox/checkpoint-stage-v1
