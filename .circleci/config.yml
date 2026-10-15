@@ -711,6 +711,20 @@ jobs:
 
             STATE="$OUT_DIR/.siso_fs_state"
             JOURNAL="$OUT_DIR/.siso_fs_state.journal"
+            # A timed-out build may exit cleanly but leave Siso's state only in
+            # its journal. Re-open Siso once in dry-run mode to replay/persist it
+            # before rejecting the checkpoint; never remove the journal manually.
+            if [ ! -s "$STATE" ] && [ -s "$JOURNAL" ] && [ "$SISO_FORCED_KILL" -eq 0 ]; then
+              echo "CHECKPOINT_JOURNAL_RECOVERY=START"
+              set +e
+              timeout --signal=INT --kill-after=10s 120s autoninja -n -C "$OUT_DIR" chrome_public_apk \\
+                > "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" 2>&1
+              RECOVERY_RET=$?
+              set -e
+              echo "CHECKPOINT_JOURNAL_RECOVERY_EXIT=$RECOVERY_RET"
+              ls -lh "$STATE" "$JOURNAL" 2>&1 | tee -a "$DIAG" || true
+              tail -n 40 "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" || true
+            fi
             OBJECT_COUNT="$(find "$OUT_DIR/obj" -type f -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
             OUTPUT_COUNT="$(find "$OUT_DIR/obj" "$OUT_DIR/gen" "$OUT_DIR/apks" -type f 2>/dev/null | wc -l | tr -d ' ')"
             echo "object_file_count_before=$OBJECTS_BEFORE" | tee -a "$DIAG"
