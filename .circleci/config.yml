@@ -46,19 +46,56 @@ jobs:
             - attach_workspace:
                 at: .
             - run:
-                name: Restore compact source snapshot
+                name: Recreate pinned Chromium source for this stage
                 command: |
                   set -euo pipefail
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst"
-                  mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
-                  tar -x -I 'zstd -T0 -d' \
-                    -f "$CIRCLE_WORKING_DIRECTORY/afterbird-source.tar.zst" \
-                    -C "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/.gclient"
-                  test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/BUILD.gn"
-                  echo "SOURCE_SNAPSHOT_RESTORE=PASS"
-                  du -sh "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
-
+                  ROOT="$CIRCLE_WORKING_DIRECTORY"
+                  export PATH="$ROOT/depot_tools:$PATH"
+                  export DEPOT_TOOLS_UPDATE=0
+                  WORKDIR="$ROOT/afterbird-chromium"
+                  SRC_DIR="$WORKDIR/src"
+                  AFTERBIRD_DIR="$ROOT/afterbird-delta"
+                  CHROMIUM_TAG="151.0.7922.38"
+                  CHROMIUM_URL="https://chromium.googlesource.com/chromium/src.git"
+                  test -d "$ROOT/depot_tools/.git"
+                  test -s "$AFTERBIRD_DIR/.build/args/release.gn"
+                  mkdir -p "$SRC_DIR"
+                  git -C "$SRC_DIR" init
+                  git -C "$SRC_DIR" remote add origin "$CHROMIUM_URL"
+                  git -C "$SRC_DIR" \
+                    -c protocol.version=2 \
+                    -c http.lowSpeedLimit=0 \
+                    -c http.lowSpeedTime=300 \
+                    fetch --no-tags --depth=1 origin \
+                    "+refs/tags/$CHROMIUM_TAG:refs/tags/$CHROMIUM_TAG"
+                  git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
+                  test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
+                  printf '%s\n' \
+                    'solutions = [' \
+                    '  {' \
+                    '    "name": "src",' \
+                    '    "url": "https://chromium.googlesource.com/chromium/src.git",' \
+                    '    "managed": False,' \
+                    '    "custom_deps": {},' \
+                    '    "custom_vars": {},' \
+                    '  },' \
+                    ']' \
+                    'target_os = ["android"]' > "$WORKDIR/.gclient"
+                  cd "$WORKDIR"
+                  gclient sync -D --no-history --nohooks
+                  gclient runhooks
+                  cd "$SRC_DIR"
+                  git clean -ffd
+                  mkdir -p "$SRC_DIR/chrome/android/java/res_chromium_base"
+                  cp -a "$AFTERBIRD_DIR/chrome/android/java/res_chromium_base/." \
+                    "$SRC_DIR/chrome/android/java/res_chromium_base/"
+                  for patch in "$AFTERBIRD_DIR"/patches/m151/*.patch; do
+                    echo "Applying $patch"
+                    git apply --check "$patch"
+                    git apply "$patch"
+                  done
+                  echo "SOURCE_RECREATION=PASS tag=$CHROMIUM_TAG"
+                  du -sh "$SRC_DIR"
       - run:
           name: Validate checkpoint archive mechanics
           command: |
@@ -866,45 +903,21 @@ jobs:
                 path: stage-build-result.txt
                 destination: checkpoint-stage-<< parameters.stage_index >>/stage-build-result.txt
       - run:
-          name: Pack source tree without duplicate build output
+          name: Skip full source snapshot packaging
           command: |
             set -euo pipefail
-            ROOT="$CIRCLE_WORKING_DIRECTORY"
-            if [ "<< parameters.stage_index >>" -ne 1 ]; then
-              echo "Stage << parameters.stage_index >>: source snapshot already handed off by stage 1."
-              test -s "$ROOT/afterbird-source.tar.zst"
-              exit 0
-            fi
-            SOURCE_ROOT="$ROOT/afterbird-chromium"
-            ARCHIVE="$ROOT/afterbird-source.tar.zst"
-            test -s "$SOURCE_ROOT/.gclient"
-            test -s "$SOURCE_ROOT/src/BUILD.gn"
-            test -s "$SOURCE_ROOT/src/out/afterbird_production/build.ninja"
-            echo "SOURCE_SNAPSHOT_START=$(date -u +%FT%TZ)"
-            du -sh "$SOURCE_ROOT/src" "$SOURCE_ROOT/src/out" || true
-            ARCHIVE_INPUTS=(.gclient src)
-            if [ -s "$SOURCE_ROOT/.gclient_entries" ]; then
-              ARCHIVE_INPUTS+=(.gclient_entries)
-            fi
-            tar -c -I 'zstd -T0 -1' \
-              --format=posix \
-              --pax-option='delete=atime,delete=ctime' \
-              --checkpoint=100000 \
-              --checkpoint-action='echo=SOURCE_SNAPSHOT_PROGRESS checkpoint=%u' \
-              --exclude='src/out' \
-              -f "$ARCHIVE" \
-              -C "$SOURCE_ROOT" "${ARCHIVE_INPUTS[@]}"
-            test -s "$ARCHIVE"
-            echo "SOURCE_SNAPSHOT_BYTES=$(stat -c '%s' "$ARCHIVE")"
-            sha256sum "$ARCHIVE"
-            echo "SOURCE_SNAPSHOT_END=$(date -u +%FT%TZ)"
-      - persist_to_workspace:
-          root: .
-          paths:
-            - afterbird-source.tar.zst
-            - afterbird-delta
-            - depot_tools
-            - current-checkpoint.meta
+            test -s "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/build.ninja"
+            echo "SOURCE_HANDOFF=PINNED_RECHECKOUT_PER_STAGE; full source tar disabled to stay within CircleCI job deadline."
+      - when:
+          condition:
+            equal: [1, << parameters.stage_index >>]
+          steps:
+            - persist_to_workspace:
+                root: .
+                paths:
+                  - afterbird-delta
+                  - depot_tools
+                  - current-checkpoint.meta
 
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
