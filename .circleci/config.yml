@@ -716,6 +716,10 @@ jobs:
             # before rejecting the checkpoint; never remove the journal manually.
             if [ ! -s "$STATE" ] && [ -s "$JOURNAL" ] && [ "$SISO_FORCED_KILL" -eq 0 ]; then
               echo "CHECKPOINT_JOURNAL_RECOVERY=START"
+              # autoninja's Android build-server helper requires SRC_DIR in its
+              # environment and the Chromium source tree as the working directory.
+              cd "$SRC_DIR"
+              export SRC_DIR
               set +e
               timeout --signal=INT --kill-after=10s 120s autoninja -n -C "$OUT_DIR" chrome_public_apk \
                 > "$CIRCLE_WORKING_DIRECTORY/checkpoint-save-recovery.log" 2>&1
