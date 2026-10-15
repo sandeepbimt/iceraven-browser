@@ -625,7 +625,8 @@ jobs:
               REMOTE_GATE_ELAPSED=0
               REMOTE_GATE_PASSED=false
               while [ "$REMOTE_GATE_ELAPSED" -lt "$REMOTE_GATE_SECONDS" ]; do
-                if grep -hi -E 'is_local=false|use reapi "remote\\.buildbuddy\\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | grep -q .; then
+                if grep -hi -E 'is_local=false|use reapi "remote\\.buildbuddy\\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | grep -q . \
+                   || grep -Eq '"is_remote"[[:space:]]*:[[:space:]]*true' "$OUT_DIR/sandfox-stage-metrics.jsonl" 2>/dev/null; then
                   REMOTE_GATE_PASSED=true
                   echo "EARLY_REMOTE_EXECUTION_GATE=PASS elapsed_seconds=$REMOTE_GATE_ELAPSED" | tee -a "$DIAG"
                   break
