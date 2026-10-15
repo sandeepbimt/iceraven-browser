@@ -137,7 +137,7 @@ jobs:
             - restore_cache:
                 name: Restore latest prior-workflow checkpoint for stage 1
                 keys:
-                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-
+                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-
       - when:
           condition:
             equal: [2, << parameters.stage_index >>]
@@ -145,7 +145,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 1 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
       - when:
           condition:
             equal: [3, << parameters.stage_index >>]
@@ -153,7 +153,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 2 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
       - when:
           condition:
             equal: [4, << parameters.stage_index >>]
@@ -161,7 +161,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 3 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
       - when:
           condition:
             equal: [5, << parameters.stage_index >>]
@@ -169,7 +169,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 4 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+                  - sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -433,7 +433,8 @@ jobs:
             CLANG_COMPILER_GNI_SHA="$(sha256sum "$SRC_DIR/build/config/compiler/compiler.gni" | awk '{print $1}')"
             CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
             printf '%s\n' \
-              'schema=3' \
+              'schema=4' \
+              'source_timestamp_policy=epoch_946684800_full_tree_v1' \
               "clang_compiler_gni_sha=$CLANG_COMPILER_GNI_SHA" \
               "chromium_tag=$CHROMIUM_TAG" \
               "chromium_sha=$CHROMIUM_SHA" \
@@ -502,6 +503,17 @@ jobs:
               exit 1
             fi
 
+            FRONTIER_FILE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-cumulative.txt"
+            FRONTIER_BEFORE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-before.txt"
+            if [ "$RESTORED" = "true" ] && [ -s "$FRONTIER_FILE" ]; then
+              cp "$FRONTIER_FILE" "$FRONTIER_BEFORE"
+            elif [ "<< parameters.stage_index >>" -ne 1 ]; then
+              echo "CHECKPOINT_FRONTIER=REJECTED; continuation checkpoint lacks a cumulative action-label frontier." >&2
+              exit 1
+            else
+              rm -f "$FRONTIER_FILE" "$FRONTIER_BEFORE"
+            fi
+
             if [ "<< parameters.stage_index >>" -eq 1 ]; then
               echo "export CHECKPOINT_RESTORED=$RESTORED" >> "$BASH_ENV"
             else
@@ -517,6 +529,46 @@ jobs:
             du -sh "$OUT_DIR"
             echo "=== DISK AFTER RESTORE / GN ==="
             df -hT
+
+      - run:
+          name: Normalize source filesystem baseline for Siso continuation
+          command: |
+            set -euo pipefail
+            SRC_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
+            SRC_OUT="$SRC_DIR/out"
+            OUT_DIR="$SRC_OUT/afterbird_production"
+            SOURCE_TIMESTAMP_EPOCH=946684800
+            test -s "$SRC_DIR/DEPS"
+            test -s "$SRC_DIR/build/config/compiler/compiler.gni"
+            test -s "$OUT_DIR/build.ninja"
+            test -e "$OUT_DIR/build.ninja.stamp"
+
+            # Run after checkpoint extraction or fresh GN generation. Normalize
+            # files, directories, and symlinks, while preserving Git metadata and out/.
+            # Extracting out/ after normalization would change the source-root mtime.
+            find "$SRC_DIR" \
+              \( -name .git -o -path "$SRC_OUT" \) -prune -o \
+              -exec touch -h -d "@$SOURCE_TIMESTAMP_EPOCH" {} +
+
+            for path in \
+              "$SRC_DIR" \
+              "$SRC_DIR/DEPS" \
+              "$SRC_DIR/build/config/compiler/compiler.gni" \
+              "$SRC_DIR/third_party/icu/common/icudtl.dat"; do
+              test -e "$path" || { echo "SOURCE_TIMESTAMP_VERIFY=FAIL missing=$path" >&2; exit 1; }
+              actual="$(stat -c '%Y' "$path")"
+              test "$actual" -eq "$SOURCE_TIMESTAMP_EPOCH" || {
+                echo "SOURCE_TIMESTAMP_VERIFY=FAIL path=$path actual=$actual expected=$SOURCE_TIMESTAMP_EPOCH" >&2
+                exit 1
+              }
+            done
+            stamp_time="$(stat -c '%Y' "$OUT_DIR/build.ninja.stamp")"
+            test "$stamp_time" -gt "$SOURCE_TIMESTAMP_EPOCH" || {
+              echo "SOURCE_TIMESTAMP_VERIFY=FAIL build.ninja.stamp is not newer than normalized source inputs" >&2
+              exit 1
+            }
+            echo "SOURCE_TIMESTAMP_POLICY=epoch_946684800_full_tree_v1"
+            echo "SOURCE_TIMESTAMP_VERIFY=PASS source_epoch=$SOURCE_TIMESTAMP_EPOCH build_ninja_stamp_epoch=$stamp_time"
 
       - run:
           name: Ensure Siso generator action pool is eight
@@ -624,6 +676,7 @@ jobs:
               echo "checkpoint_restored=${CHECKPOINT_RESTORED:-unknown}"
               echo "chromium_tag=151.0.7922.38"
               echo "afterbird_sha=5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
+              echo "source_timestamp_policy=epoch_946684800_full_tree_v1"
               echo "checkpoint_identity:"
               cat "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
               echo
@@ -633,13 +686,14 @@ jobs:
             METRICS_FILE="$OUT_DIR/sandfox-stage-metrics.jsonl"
             METRICS_ARTIFACT="$CIRCLE_WORKING_DIRECTORY/siso-stage-metrics.jsonl"
             COUNT_FILE="$CIRCLE_WORKING_DIRECTORY/siso-metric-counts.txt"
-            REMOTE_ACTIONS=0
             CACHE_ACTIONS=0
             LOCAL_ACTIONS=0
-            FALLBACK_ACTIONS=0
+            NO_EXEC_ACTIONS=0
+            METRIC_ACTION_RECORDS=0
             METRIC_RECORDS=0
             METRICS_PRESENT=false
             REMOTE_EXEC_LOG_COUNT=0
+            HANDOVER_GATE_FAILED=false
             OBJECTS_BEFORE="$(printenv STAGE_START_OBJECTS 2>/dev/null || true)"
             OUTPUTS_BEFORE="$(printenv STAGE_START_OUTPUTS 2>/dev/null || true)"
             [ -n "$OBJECTS_BEFORE" ] || OBJECTS_BEFORE=0
@@ -668,6 +722,11 @@ jobs:
               REMOTE_GATE_ELAPSED=0
               REMOTE_GATE_PASSED=false
               while [ "$REMOTE_GATE_ELAPSED" -lt "$REMOTE_GATE_SECONDS" ]; do
+                if grep -Fq 'Regenerating ninja files' "$BUILD_LOG" 2>/dev/null; then
+                  echo "INCREMENTAL_HANDOVER_GATE=FAIL; GN regenerated despite the normalized source baseline. Stopping before spending the stage compile budget." | tee -a "$DIAG" >&2
+                  HANDOVER_GATE_FAILED=true
+                  break
+                fi
                 if grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | grep -q . \
                    || grep -Eq '"is_remote"[[:space:]]*:[[:space:]]*true' "$OUT_DIR/sandfox-stage-metrics.jsonl" 2>/dev/null; then
                   REMOTE_GATE_PASSED=true
@@ -680,7 +739,15 @@ jobs:
                 sleep "$REMOTE_GATE_INTERVAL"
                 REMOTE_GATE_ELAPSED=$((REMOTE_GATE_ELAPSED + REMOTE_GATE_INTERVAL))
               done
-              if [ "$REMOTE_GATE_PASSED" != true ] && kill -0 "$BUILD_PID" 2>/dev/null; then
+              if [ "$HANDOVER_GATE_FAILED" = true ]; then
+                kill -INT -- "-$BUILD_PID" 2>/dev/null || true
+                sleep 5
+                kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
+                sleep 5
+                kill -KILL -- "-$BUILD_PID" 2>/dev/null || true
+                wait "$BUILD_PID"
+                RET=125
+              elif [ "$REMOTE_GATE_PASSED" != true ] && kill -0 "$BUILD_PID" 2>/dev/null; then
                 echo "EARLY_REMOTE_EXECUTION_GATE=FAIL; no runtime REAPI evidence within $REMOTE_GATE_SECONDS seconds; stopping build to avoid wasting the stage." | tee -a "$DIAG" >&2
                 kill -INT -- "-$BUILD_PID" 2>/dev/null || true
                 sleep 10
@@ -690,6 +757,9 @@ jobs:
                 wait "$BUILD_PID"
                 RET=125
               else
+                if [ "$REMOTE_GATE_PASSED" = true ]; then
+                  echo "INCREMENTAL_HANDOVER_GATE=PASS; no Ninja regeneration before remote execution was confirmed." | tee -a "$DIAG"
+                fi
                 wait "$BUILD_PID"
                 RET=$?
                 if [ "$REMOTE_GATE_PASSED" != true ] && [ ! -s "$APK" ]; then
@@ -727,15 +797,76 @@ jobs:
               METRICS_PRESENT=true
               cp "$METRICS_FILE" "$METRICS_ARTIFACT"
               METRIC_RECORDS="$(wc -l < "$METRICS_FILE" | tr -d ' ')"
+              python3 - "$METRICS_ARTIFACT" > "$COUNT_FILE" <<'PY'
+            import json
+            import sys
+
+            action_records = 0
+            cached = 0
+            local = 0
+            no_exec = 0
+            with open(sys.argv[1], encoding="utf-8") as source:
+                for line_number, line in enumerate(source, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        raise SystemExit(f"Invalid Siso JSONL at line {line_number}: {exc}")
+                    if not isinstance(record, dict) or "step_id" not in record or not isinstance(record.get("outputs"), list):
+                        continue
+                    action_records += 1
+                    cached += record.get("cached") is True
+                    local += record.get("is_local") is True
+                    no_exec += record.get("no_exec") is True
+
+            print(f"metric_action_record_count={action_records}")
+            print(f"cache_action_count={cached}")
+            print(f"local_action_count={local}")
+            print(f"no_exec_action_count={no_exec}")
+            PY
+              METRIC_ACTION_RECORDS="$(sed -n 's/^metric_action_record_count=//p' "$COUNT_FILE" | tail -n 1)"
+              CACHE_ACTIONS="$(sed -n 's/^cache_action_count=//p' "$COUNT_FILE" | tail -n 1)"
+              LOCAL_ACTIONS="$(sed -n 's/^local_action_count=//p' "$COUNT_FILE" | tail -n 1)"
+              NO_EXEC_ACTIONS="$(sed -n 's/^no_exec_action_count=//p' "$COUNT_FILE" | tail -n 1)"
             else
               echo "SISO_METRICS_FILE=MISSING" | tee -a "$DIAG"
             fi
-            # These REAPI signatures were observed in the earlier remote Siso run.
+            # This counts distinct remote-execution log signatures, not actual
+            # remote actions; Siso JSONL does not contain an is_remote field.
             REMOTE_EXEC_LOG_COUNT="$(grep -hi -E 'is_local=false|use reapi "remote\.buildbuddy\.io:443"|step state: remote exec|exec remote execute' "$OUT_DIR/siso.INFO" "$BUILD_LOG" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
-            REMOTE_ACTIONS="$REMOTE_EXEC_LOG_COUNT"
             echo "SISO_METRIC_RECORD_COUNT=$METRIC_RECORDS" | tee -a "$DIAG"
-            echo "REMOTE_EXEC_LOG_COUNT=$REMOTE_EXEC_LOG_COUNT" | tee -a "$DIAG"
+            echo "SISO_METRIC_ACTION_RECORD_COUNT=$METRIC_ACTION_RECORDS" | tee -a "$DIAG"
+            echo "SISO_CACHE_ACTION_RECORD_COUNT=$CACHE_ACTIONS" | tee -a "$DIAG"
+            echo "SISO_LOCAL_ACTION_RECORD_COUNT=$LOCAL_ACTIONS" | tee -a "$DIAG"
+            echo "SISO_NO_EXEC_ACTION_RECORD_COUNT=$NO_EXEC_ACTIONS" | tee -a "$DIAG"
+            echo "REMOTE_EXEC_LOG_SIGNATURE_COUNT=$REMOTE_EXEC_LOG_COUNT" | tee -a "$DIAG"
             rm -f "$METRICS_FILE"
+
+            FRONTIER_FILE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-cumulative.txt"
+            FRONTIER_BEFORE="$CIRCLE_WORKING_DIRECTORY/stage-frontier-before.txt"
+            FRONTIER_CURRENT="$CIRCLE_WORKING_DIRECTORY/stage-frontier-current.txt"
+            FRONTIER_NEW="$CIRCLE_WORKING_DIRECTORY/stage-frontier-new.txt"
+            FRONTIER_NEXT="$CIRCLE_WORKING_DIRECTORY/stage-frontier-next.txt"
+            sed -nE 's/^\[[0-9]+\/[0-9]+\][[:space:]]+[^[:space:]]+[[:space:]]+F[[:space:]]+(.*)$/\1/p' "$BUILD_LOG" \
+              | LC_ALL=C sort -u > "$FRONTIER_CURRENT"
+            grep -Fvx 'Regenerating ninja files' "$FRONTIER_CURRENT" > "$FRONTIER_NEXT" || true
+            mv "$FRONTIER_NEXT" "$FRONTIER_CURRENT"
+            FRONTIER_COMPLETED_LABEL_COUNT="$(wc -l < "$FRONTIER_CURRENT" | tr -d ' ')"
+            FRONTIER_PRIOR_LABEL_COUNT=0
+            if [ -s "$FRONTIER_BEFORE" ]; then
+              FRONTIER_PRIOR_LABEL_COUNT="$(wc -l < "$FRONTIER_BEFORE" | tr -d ' ')"
+              comm -23 "$FRONTIER_CURRENT" "$FRONTIER_BEFORE" > "$FRONTIER_NEW"
+              cat "$FRONTIER_BEFORE" "$FRONTIER_CURRENT" | LC_ALL=C sort -u > "$FRONTIER_NEXT"
+              mv "$FRONTIER_NEXT" "$FRONTIER_FILE"
+            else
+              cp "$FRONTIER_CURRENT" "$FRONTIER_NEW"
+              cp "$FRONTIER_CURRENT" "$FRONTIER_FILE"
+            fi
+            FRONTIER_NEW_LABEL_COUNT="$(wc -l < "$FRONTIER_NEW" | tr -d ' ')"
+            echo "ACTION_FRONTIER_PRIOR_UNIQUE_LABEL_COUNT=$FRONTIER_PRIOR_LABEL_COUNT" | tee -a "$DIAG"
+            echo "ACTION_FRONTIER_CURRENT_UNIQUE_LABEL_COUNT=$FRONTIER_COMPLETED_LABEL_COUNT" | tee -a "$DIAG"
+            echo "ACTION_FRONTIER_NEW_UNIQUE_LABEL_COUNT=$FRONTIER_NEW_LABEL_COUNT" | tee -a "$DIAG"
 
             STATE="$OUT_DIR/.siso_fs_state"
             JOURNAL="$OUT_DIR/.siso_fs_state.journal"
@@ -747,10 +878,10 @@ jobs:
             echo "build_output_count_before=$OUTPUTS_BEFORE" | tee -a "$DIAG"
             echo "build_output_count_after=$OUTPUT_COUNT" | tee -a "$DIAG"
             echo "build_output_count_delta=$((OUTPUT_COUNT - OUTPUTS_BEFORE))" | tee -a "$DIAG"
-            echo "remote_action_count=$REMOTE_ACTIONS" | tee -a "$DIAG"
+            echo "remote_exec_log_signature_count=$REMOTE_EXEC_LOG_COUNT" | tee -a "$DIAG"
             echo "cache_action_count=$CACHE_ACTIONS" | tee -a "$DIAG"
             echo "local_action_count=$LOCAL_ACTIONS" | tee -a "$DIAG"
-            echo "fallback_action_count=$FALLBACK_ACTIONS" | tee -a "$DIAG"
+            echo "no_exec_action_count=$NO_EXEC_ACTIONS" | tee -a "$DIAG"
             ls -lh "$STATE" "$JOURNAL" 2>&1 | tee -a "$DIAG" || true
             if [ "$SISO_FORCED_KILL" -ne 0 ]; then
               echo "CHECKPOINT_SAVE=REJECTED reason=siso_did_not_exit_cleanly" | tee -a "$DIAG"
@@ -760,6 +891,17 @@ jobs:
             if [ ! -s "$STATE" ]; then
               echo "CHECKPOINT_SAVE=REJECTED reason=siso_base_state_missing" | tee -a "$DIAG"
               tail -n 200 "$OUT_DIR/siso_output" 2>&1 | tee -a "$DIAG" || true
+              exit 1
+            fi
+            if [ "$HANDOVER_GATE_FAILED" = true ]; then
+              echo "CHECKPOINT_SAVE=REJECTED reason=unexpected_gn_regeneration_after_timestamp_normalization" | tee -a "$DIAG"
+              {
+                echo "=== FIRST 40 BUILD LOG LINES ==="
+                head -n 40 "$BUILD_LOG" 2>/dev/null || true
+                echo "=== LAST 80 BUILD LOG LINES ==="
+                tail -n 80 "$BUILD_LOG" 2>/dev/null || true
+              } >> "$DIAG"
+              cat "$DIAG"
               exit 1
             fi
             if [ -s "$JOURNAL" ]; then
@@ -798,13 +940,16 @@ jobs:
               "object_count_after=$OBJECT_COUNT" \
               "output_count_before=$OUTPUTS_BEFORE" \
               "output_count_after=$OUTPUT_COUNT" \
-              "remote_action_count=$REMOTE_ACTIONS" \
+              "remote_exec_log_signature_count=$REMOTE_EXEC_LOG_COUNT" \
               "cache_action_count=$CACHE_ACTIONS" \
               "local_action_count=$LOCAL_ACTIONS" \
-              "fallback_action_count=$FALLBACK_ACTIONS" \
+              "no_exec_action_count=$NO_EXEC_ACTIONS" \
+              "metric_action_record_count=$METRIC_ACTION_RECORDS" \
               "metric_record_count=$METRIC_RECORDS" \
               "metrics_present=$METRICS_PRESENT" \
-              "remote_exec_log_count=$REMOTE_EXEC_LOG_COUNT" \
+              "prior_frontier_label_count=$FRONTIER_PRIOR_LABEL_COUNT" \
+              "completed_frontier_label_count=$FRONTIER_COMPLETED_LABEL_COUNT" \
+              "new_frontier_label_count=$FRONTIER_NEW_LABEL_COUNT" \
               "strict_remote=enabled" \
               "checkpoint_save=PASS" \
               "apk_present=$APK_PRESENT" \
@@ -893,10 +1038,11 @@ jobs:
 
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
-          key: sandfox-c4-siso-checkpoint-v2-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
+          key: sandfox-c4-siso-checkpoint-v3-epoch946684800-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
           paths:
             - checkpoint.tar.zst
             - checkpoint.meta
+            - stage-frontier-cumulative.txt
       - run:
           name: Record APK status
           command: |
@@ -934,12 +1080,16 @@ jobs:
             OBJECTS_AFTER="$(result_value object_count_after)"
             OUTPUTS_BEFORE="$(result_value output_count_before)"
             OUTPUTS_AFTER="$(result_value output_count_after)"
-            REMOTE_ACTIONS="$(result_value remote_action_count)"
+            REMOTE_EXEC_LOG_SIGNATURES="$(result_value remote_exec_log_signature_count)"
             CACHE_ACTIONS="$(result_value cache_action_count)"
-            FALLBACK_ACTIONS="$(result_value fallback_action_count)"
+            LOCAL_ACTIONS="$(result_value local_action_count)"
+            NO_EXEC_ACTIONS="$(result_value no_exec_action_count)"
+            METRIC_ACTION_RECORDS="$(result_value metric_action_record_count)"
             METRICS_PRESENT="$(result_value metrics_present)"
             METRIC_RECORDS="$(result_value metric_record_count)"
-            REMOTE_EXEC_LOG_COUNT="$(result_value remote_exec_log_count)"
+            PRIOR_FRONTIER_LABELS="$(result_value prior_frontier_label_count)"
+            COMPLETED_FRONTIER_LABELS="$(result_value completed_frontier_label_count)"
+            NEW_FRONTIER_LABELS="$(result_value new_frontier_label_count)"
             STRICT_REMOTE="$(result_value strict_remote)"
             CHECKPOINT_SAVE="$(result_value checkpoint_save)"
             test "$CHECKPOINT_SAVE" = "PASS" || { echo "STAGE_GATE=FAIL; safe checkpoint missing." >&2; exit 1; }
@@ -948,30 +1098,27 @@ jobs:
               echo "STAGE_GATE=FAIL; no APK and build exit status $BUILD_EXIT (expected bounded timeout)." >&2
               exit 1
             fi
-            case "$OBJECTS_BEFORE:$OBJECTS_AFTER:$OUTPUTS_BEFORE:$OUTPUTS_AFTER:$REMOTE_ACTIONS:$CACHE_ACTIONS:$FALLBACK_ACTIONS:$METRIC_RECORDS:$REMOTE_EXEC_LOG_COUNT" in
+            case "$OBJECTS_BEFORE:$OBJECTS_AFTER:$OUTPUTS_BEFORE:$OUTPUTS_AFTER:$REMOTE_EXEC_LOG_SIGNATURES:$CACHE_ACTIONS:$LOCAL_ACTIONS:$NO_EXEC_ACTIONS:$METRIC_ACTION_RECORDS:$METRIC_RECORDS:$PRIOR_FRONTIER_LABELS:$COMPLETED_FRONTIER_LABELS:$NEW_FRONTIER_LABELS" in
               *[!0-9:]*|:*|*::*)
                 echo "STAGE_GATE=FAIL; progress counters missing or malformed." >&2
                 exit 1
                 ;;
             esac
-            if [ "$METRICS_PRESENT" != "true" ] && [ "$REMOTE_EXEC_LOG_COUNT" -le 0 ]; then
+            if [ "$METRICS_PRESENT" != "true" ] && [ "$REMOTE_EXEC_LOG_SIGNATURES" -le 0 ]; then
               echo "STAGE_GATE=FAIL; no Siso metrics file and no remote-execution log evidence." >&2
               exit 1
             fi
-            if [ "$REMOTE_EXEC_LOG_COUNT" -le 0 ]; then
+            if [ "$REMOTE_EXEC_LOG_SIGNATURES" -le 0 ]; then
               echo "STAGE_GATE=FAIL; Siso logs do not prove REAPI execution occurred." >&2
               exit 1
             fi
-            if [ "$FALLBACK_ACTIONS" -gt 0 ]; then
-              echo "STAGE_GATE=FAIL; remote-to-local fallback occurred in strict remote mode." >&2
+            if [ "$NEW_FRONTIER_LABELS" -le 0 ] && [ "$OUTPUTS_AFTER" -le "$OUTPUTS_BEFORE" ] && [ "$OBJECTS_AFTER" -le "$OBJECTS_BEFORE" ]; then
+              echo "STAGE_GATE=FAIL; no new completed action/output labels and no new output paths; refusing to spend another stage repeating work." >&2
+              echo "Frontier labels: prior=$PRIOR_FRONTIER_LABELS current=$COMPLETED_FRONTIER_LABELS new=$NEW_FRONTIER_LABELS" >&2
+              echo "Path counts: objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER" >&2
               exit 1
             fi
-            if [ "$OUTPUTS_AFTER" -le "$OUTPUTS_BEFORE" ] && [ "$OBJECTS_AFTER" -le "$OBJECTS_BEFORE" ]; then
-              echo "STAGE_GATE=FAIL; stage added no durable outputs; refusing to spend another stage repeating work." >&2
-              echo "Objects: $OBJECTS_BEFORE -> $OBJECTS_AFTER; outputs: $OUTPUTS_BEFORE -> $OUTPUTS_AFTER" >&2
-              exit 1
-            fi
-            echo "STAGE_PROGRESS_GATE=PASS objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER remote=$REMOTE_ACTIONS cache=$CACHE_ACTIONS"
+            echo "STAGE_PROGRESS_GATE=PASS new_frontier_labels=$NEW_FRONTIER_LABELS current_unique_labels=$COMPLETED_FRONTIER_LABELS prior_cumulative_labels=$PRIOR_FRONTIER_LABELS objects=$OBJECTS_BEFORE->$OBJECTS_AFTER outputs=$OUTPUTS_BEFORE->$OUTPUTS_AFTER remote_log_signatures=$REMOTE_EXEC_LOG_SIGNATURES cache_action_records=$CACHE_ACTIONS local_action_records=$LOCAL_ACTIONS no_exec_action_records=$NO_EXEC_ACTIONS"
             if [ "$STAGE_INDEX" -eq 5 ]; then
               echo "MAX_STAGES_REACHED=5; APK was not produced." >&2
               exit 1
