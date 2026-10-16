@@ -9,6 +9,74 @@ jobs:
       image: ubuntu-2404:current
     resource_class: large
     steps:
+      - when:
+          condition:
+            equal: [2, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Early-check prior stage 1 output
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+      - when:
+          condition:
+            equal: [3, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Early-check prior stage 2 output
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+      - when:
+          condition:
+            equal: [4, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Early-check prior stage 3 output
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+      - when:
+          condition:
+            equal: [5, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Early-check prior stage 4 output
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+      - run:
+          name: Fast-exit later stages when a verified APK already exists
+          command: |
+            set -eu
+            STAGE_INDEX="<< parameters.stage_index >>"
+            if [ "$STAGE_INDEX" -eq 1 ]; then
+              echo "APK_FAST_PATH=NOT_APPLICABLE stage=1"
+              exit 0
+            fi
+            BASELINE="$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
+            APK="$BASELINE/ChromePublic.apk"
+            STATUS="$BASELINE/status.txt"
+            if [ ! -s "$STATUS" ] || ! grep -qx 'BUILD_FINISHED=true' "$STATUS" || [ ! -s "$APK" ]; then
+              echo "APK_FAST_PATH=MISS; continuing normal stage work."
+              exit 0
+            fi
+            if python3 - "$APK" <<'PY'
+            import sys, zipfile
+            path = sys.argv[1]
+            try:
+                with zipfile.ZipFile(path) as apk:
+                    bad = apk.testzip()
+                    if bad:
+                        print(f"APK_ARCHIVE_INVALID entry={bad}", file=sys.stderr)
+                        raise SystemExit(1)
+            except (OSError, zipfile.BadZipFile) as exc:
+                print(f"APK_ARCHIVE_INVALID reason={exc}", file=sys.stderr)
+                raise SystemExit(1)
+            print("APK_ARCHIVE_VALID=true")
+            PY
+            then
+              echo "APK_FAST_PATH=PASS stage=$STAGE_INDEX; verified APK recovered from prior stage cache."
+              circleci-agent step halt
+            else
+              echo "APK_FAST_PATH=REJECTED; archive verification failed; continuing normal stage work."
+            fi
       - run:
           name: Record stage start time and validate BuildBuddy credentials
           command: |
@@ -153,38 +221,6 @@ jobs:
                 name: Restore latest prior-workflow checkpoint for stage 1
                 keys:
                   - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-
-      - when:
-          condition:
-            equal: [2, << parameters.stage_index >>]
-          steps:
-            - restore_cache:
-                name: Restore stage 1 checkpoint
-                keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
-      - when:
-          condition:
-            equal: [3, << parameters.stage_index >>]
-          steps:
-            - restore_cache:
-                name: Restore stage 2 checkpoint
-                keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
-      - when:
-          condition:
-            equal: [4, << parameters.stage_index >>]
-          steps:
-            - restore_cache:
-                name: Restore stage 3 checkpoint
-                keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
-      - when:
-          condition:
-            equal: [5, << parameters.stage_index >>]
-          steps:
-            - restore_cache:
-                name: Restore stage 4 checkpoint
-                keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -1180,13 +1216,6 @@ jobs:
                   - depot_tools
                   - current-checkpoint.meta
 
-      - save_cache:
-          name: Save latest build-output checkpoint for the next stage or workflow
-          key: sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
-          paths:
-            - checkpoint.tar.zst
-            - checkpoint.meta
-            - stage-frontier-cumulative.txt
       - run:
           name: Record APK status
           command: |
@@ -1200,6 +1229,14 @@ jobs:
               printf 'BUILD_FINISHED=false\nCheckpoint saved; APK is not complete yet.\n' > "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
             fi
             cat "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
+      - save_cache:
+          name: Save checkpoint and APK status for the next stage
+          key: sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
+          paths:
+            - checkpoint.tar.zst
+            - checkpoint.meta
+            - stage-frontier-cumulative.txt
+            - afterbird-baseline
       - store_artifacts:
           path: afterbird-baseline
           destination: afterbird-baseline
