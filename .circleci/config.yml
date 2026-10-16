@@ -323,7 +323,7 @@ jobs:
             export DEPOT_TOOLS_UPDATE=0
             cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium"
             SYNC_LOG="$(mktemp)"
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if gclient sync -D --no-history --nohooks >"$SYNC_LOG" 2>&1; then
                 cat "$SYNC_LOG"
                 echo "Chromium dependency sync succeeded on attempt $attempt."
@@ -336,12 +336,12 @@ jobs:
                 echo "Dependency sync failed for a non-transient reason; not retrying."
                 exit "$sync_status"
               fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "Dependency sync still hit HTTP 503/packfile errors after 3 attempts."
+              if [ "$attempt" -eq 5 ]; then
+                echo "Dependency sync still hit HTTP 503/packfile errors after 5 attempts."
                 exit "$sync_status"
               fi
-              delay=$((attempt * 15))
-              echo "Transient source-server failure; retrying sync in $delay seconds (attempt $((attempt + 1))/3)."
+              delay=$((attempt * 20))
+              echo "Transient source-server failure; retrying sync in $delay seconds (attempt $((attempt + 1))/5)."
               sleep "$delay"
             done
       - run:
