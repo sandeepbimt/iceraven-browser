@@ -750,7 +750,7 @@ jobs:
             grep -Eq '^SISO_REAPI_INSTANCE=.+$' "$SISO_ENV_FILE"
             grep -Fx "SISO_CREDENTIAL_HELPER=$HELPER" "$SISO_ENV_FILE"
             test -x "$HELPER"
-            grep -Fx 'ninja -re_cache_enable_write=true' "$SISO_RC_FILE"
+            grep -Fx 'ninja -re_cache_enable_write=true --reapi_grpc_conn_pool=1 --reapi_keep_exec_stream' "$SISO_RC_FILE"
             test -s "$SISO_BACKEND_FILE"
             command -v autoninja >/dev/null
             TARGET="$(gn ls "$OUT_DIR" //chrome/android:chrome_public_apk)"
