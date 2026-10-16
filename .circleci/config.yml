@@ -329,7 +329,7 @@ jobs:
             fi
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             AFTERBIRD_URL="https://github.com/sandeepbimt/Sandfox-Chromium.git"
-            AFTERBIRD_SHA="e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
+            AFTERBIRD_SHA="882d5426fde4a6b469304df561b8d1ea89629cf3"
             mkdir -p "$AFTERBIRD_DIR"
             git -C "$AFTERBIRD_DIR" init
             git -C "$AFTERBIRD_DIR" remote add origin "$AFTERBIRD_URL"
@@ -481,7 +481,7 @@ jobs:
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             CHROMIUM_TAG="151.0.7922.38"
-            AFTERBIRD_SHA="e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
+            AFTERBIRD_SHA="882d5426fde4a6b469304df561b8d1ea89629cf3"
             ARGS_FILE="$CIRCLE_WORKING_DIRECTORY/sandfox-release-args.gn"
             SISO_ENV_FILE="$SRC_DIR/build/config/siso/.sisoenv"
             SISO_RC_FILE="$SRC_DIR/build/config/siso/.sisorc"
@@ -776,7 +776,7 @@ jobs:
               echo "checkpoint_restored=${CHECKPOINT_RESTORED:-unknown}"
               echo "checkpoint_state_mode=${CHECKPOINT_STATE_MODE:-unknown}"
               echo "chromium_tag=151.0.7922.38"
-              echo "afterbird_sha=e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
+              echo "afterbird_sha=882d5426fde4a6b469304df561b8d1ea89629cf3"
               echo "source_timestamp_policy=epoch_946684800_full_tree_v1"
               echo "checkpoint_identity:"
               cat "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
