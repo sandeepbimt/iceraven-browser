@@ -1236,21 +1236,7 @@ jobs:
             APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
             mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
             FAST_STATUS="$CIRCLE_WORKING_DIRECTORY/apk-completion-status.txt"
-            if [ -s "$APK" ] && python3 - "$APK" <<'PY'
-            import sys, zipfile
-            path = sys.argv[1]
-            try:
-                with zipfile.ZipFile(path) as apk:
-                    bad = apk.testzip()
-                    if bad:
-                        print(f"APK_ARCHIVE_INVALID entry={bad}", file=sys.stderr)
-                        raise SystemExit(1)
-            except (OSError, zipfile.BadZipFile) as exc:
-                print(f"APK_ARCHIVE_INVALID reason={exc}", file=sys.stderr)
-                raise SystemExit(1)
-            print("APK_ARCHIVE_VALID=true")
-            PY
-            then
+            if [ -s "$APK" ] && python3 -c 'import sys, zipfile; apk=zipfile.ZipFile(sys.argv[1]); bad=apk.testzip(); print("APK_ARCHIVE_VALID=true" if bad is None else "APK_ARCHIVE_INVALID entry="+bad); sys.exit(0 if bad is None else 1)' "$APK"; then
               cp "$APK" "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/ChromePublic.apk"
               APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
               APK_SIZE="$(stat -c '%s' "$APK")"
