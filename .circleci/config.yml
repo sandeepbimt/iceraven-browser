@@ -329,7 +329,7 @@ jobs:
             fi
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             AFTERBIRD_URL="https://github.com/sandeepbimt/Sandfox-Chromium.git"
-            AFTERBIRD_SHA="0c756fa0eb9acb0d4710cbad0ce32733dd4493cf"
+            AFTERBIRD_SHA="e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
             mkdir -p "$AFTERBIRD_DIR"
             git -C "$AFTERBIRD_DIR" init
             git -C "$AFTERBIRD_DIR" remote add origin "$AFTERBIRD_URL"
@@ -389,6 +389,8 @@ jobs:
               git apply --check "$patch"
               git apply "$patch"
             done
+            echo "Applying SANDFOX bottom-toolbar defaults with checked source edit"
+            SRC_DIR="$SRC_DIR" python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["SRC_DIR"])/"chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/settings/AddressBarPreference.java"; s=p.read_text(); old1="private static final @ToolbarPositionAndSource int DEFAULT_POSITION_AND_SOURCE =\n            ToolbarPositionAndSource.TOP_SETTINGS;"; new1=old1.replace("TOP_SETTINGS;", "BOTTOM_SETTINGS;"); old2="private static @ToolbarPositionAndSource int fromLocalState(boolean isInBottomPosition) {\n        if (isInBottomPosition) return ToolbarPositionAndSource.BOTTOM_SETTINGS;\n        return DEFAULT_POSITION_AND_SOURCE;\n    }"; new2=old2.replace("return DEFAULT_POSITION_AND_SOURCE;", "return ToolbarPositionAndSource.TOP_SETTINGS;"); n1=s.count(old1); n2=s.count(old2); assert n1==1 and n2==1, f"Expected one exact toolbar-default block and one local-state method; found {n1}/{n2}"; s=s.replace(old1,new1,1).replace(old2,new2,1); p.write_text(s); print("SANDFOX_BOTTOM_TOOLBAR_DEFAULT=PASS")'
             git status --short
       - run:
           name: Normalize Clang crash diagnostics path for REAPI
@@ -479,7 +481,7 @@ jobs:
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             CHROMIUM_TAG="151.0.7922.38"
-            AFTERBIRD_SHA="0c756fa0eb9acb0d4710cbad0ce32733dd4493cf"
+            AFTERBIRD_SHA="e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
             ARGS_FILE="$CIRCLE_WORKING_DIRECTORY/sandfox-release-args.gn"
             SISO_ENV_FILE="$SRC_DIR/build/config/siso/.sisoenv"
             SISO_RC_FILE="$SRC_DIR/build/config/siso/.sisorc"
@@ -774,7 +776,7 @@ jobs:
               echo "checkpoint_restored=${CHECKPOINT_RESTORED:-unknown}"
               echo "checkpoint_state_mode=${CHECKPOINT_STATE_MODE:-unknown}"
               echo "chromium_tag=151.0.7922.38"
-              echo "afterbird_sha=0c756fa0eb9acb0d4710cbad0ce32733dd4493cf"
+              echo "afterbird_sha=e1e731e4bff269a7c0a6a8b9c07c42f67e8892b5"
               echo "source_timestamp_policy=epoch_946684800_full_tree_v1"
               echo "checkpoint_identity:"
               cat "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta"
