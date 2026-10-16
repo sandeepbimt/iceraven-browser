@@ -472,7 +472,7 @@ jobs:
               --reapi_address "$REAPI_ADDRESS" \
               --reapi_backend_config_path "$BACKEND" \
               --credential-helper "$HELPER"
-            printf '%s\n' 'ninja -re_cache_enable_write=true' > "$SRC_DIR/build/config/siso/.sisorc"
+            printf '%s\n' 'ninja -re_cache_enable_write=true --reapi_grpc_conn_pool=1 --reapi_keep_exec_stream' > "$SRC_DIR/build/config/siso/.sisorc"
             printf 'export SISO_REAPI_ADDRESS=%q\n' "$REAPI_ADDRESS" >> "$BASH_ENV"
             printf 'export SISO_REAPI_INSTANCE=%q\n' "$REAPI_INSTANCE" >> "$BASH_ENV"
             echo 'export SISO_LIMITS=local=8,remote=80' >> "$BASH_ENV"
