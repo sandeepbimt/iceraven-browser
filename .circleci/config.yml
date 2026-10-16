@@ -201,7 +201,7 @@ jobs:
             - restore_cache:
                 name: Restore latest prior-workflow checkpoint for stage 1
                 keys:
-                  - sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-
       - when:
           condition:
             equal: [2, << parameters.stage_index >>]
@@ -209,7 +209,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 1 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
       - when:
           condition:
             equal: [3, << parameters.stage_index >>]
@@ -217,7 +217,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 2 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
       - when:
           condition:
             equal: [4, << parameters.stage_index >>]
@@ -225,7 +225,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 3 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
       - when:
           condition:
             equal: [5, << parameters.stage_index >>]
@@ -233,7 +233,7 @@ jobs:
             - restore_cache:
                 name: Restore stage 4 checkpoint
                 keys:
-                  - sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -1273,7 +1273,7 @@ jobs:
             cat "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
       - save_cache:
           name: Save latest build-output checkpoint for the next stage or workflow
-          key: sandfox-c4-siso-checkpoint-v5-afterbird-882d5426fde4a6b469304df561b8d1ea89629cf3-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
+          key: sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
           paths:
             - checkpoint.tar.zst
             - checkpoint.meta
