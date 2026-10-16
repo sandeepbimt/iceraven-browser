@@ -16,7 +16,7 @@ jobs:
             - restore_cache:
                 name: Early-check prior stage 1 APK status
                 keys:
-                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-
       - when:
           condition:
             equal: [3, << parameters.stage_index >>]
@@ -24,7 +24,7 @@ jobs:
             - restore_cache:
                 name: Early-check prior stage 2 APK status
                 keys:
-                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-
       - when:
           condition:
             equal: [4, << parameters.stage_index >>]
@@ -32,7 +32,7 @@ jobs:
             - restore_cache:
                 name: Early-check prior stage 3 APK status
                 keys:
-                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-
       - when:
           condition:
             equal: [5, << parameters.stage_index >>]
@@ -40,7 +40,7 @@ jobs:
             - restore_cache:
                 name: Early-check prior stage 4 APK status
                 keys:
-                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-
       - run:
           name: Fast-exit later stages when a verified APK already exists
           command: |
