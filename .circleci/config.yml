@@ -328,8 +328,8 @@ jobs:
               exit 0
             fi
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
-            AFTERBIRD_URL="https://github.com/danosito/afterbird.git"
-            AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
+            AFTERBIRD_URL="https://github.com/sandeepbimt/Sandfox-Chromium.git"
+            AFTERBIRD_SHA="27b5c254e972ff373e456f04a1ee4451bbe1b506"
             mkdir -p "$AFTERBIRD_DIR"
             git -C "$AFTERBIRD_DIR" init
             git -C "$AFTERBIRD_DIR" remote add origin "$AFTERBIRD_URL"
@@ -479,7 +479,7 @@ jobs:
             OUT_DIR="$SRC_DIR/out/afterbird_production"
             AFTERBIRD_DIR="$CIRCLE_WORKING_DIRECTORY/afterbird-delta"
             CHROMIUM_TAG="151.0.7922.38"
-            AFTERBIRD_SHA="5ff224f9ef8f8a0792abd2babc9f7164e8dcdb3e"
+            AFTERBIRD_SHA="27b5c254e972ff373e456f04a1ee4451bbe1b506"
             ARGS_FILE="$CIRCLE_WORKING_DIRECTORY/sandfox-release-args.gn"
             SISO_ENV_FILE="$SRC_DIR/build/config/siso/.sisoenv"
             SISO_RC_FILE="$SRC_DIR/build/config/siso/.sisorc"
