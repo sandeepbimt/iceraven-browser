@@ -379,6 +379,15 @@ jobs:
             # Each CircleCI job gets a fresh VM; source/build outputs persist,
             # but apt-installed host libraries do not.
             export DEBIAN_FRONTEND=noninteractive
+
+            # CircleCI's Ubuntu image may already contain this Chrome source.
+            # Chromium's dependency installer adds google.list, so keeping both
+            # causes apt-get update to fail on duplicate CNF targets.
+            if [ -f /etc/apt/sources.list.d/google-chrome.list ]; then
+              echo "Removing preinstalled duplicate Google Chrome APT source."
+              sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+            fi
+
             cd "$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src"
             ./build/install-build-deps.sh --no-chromeos-fonts
       - run:
