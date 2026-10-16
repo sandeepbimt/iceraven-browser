@@ -526,7 +526,7 @@ jobs:
                 SISO_RC_SHA="$SISO_RC_RAW_SHA"
                 ;;
               'ninja -re_cache_enable_write=true --reapi_grpc_conn_pool=1 --reapi_keep_exec_stream')
-                SISO_RC_SHA="$(printf '%s\\n' 'ninja -re_cache_enable_write=true' | sha256sum | awk '{print $1}')"
+                SISO_RC_SHA="$(printf '%s\n' 'ninja -re_cache_enable_write=true' | sha256sum | awk '{print $1}')"
                 echo "SISO_RC_FINGERPRINT=CANONICALIZED_REAPI_TRANSPORT_FLAGS"
                 ;;
               *)
