@@ -519,7 +519,21 @@ jobs:
             test "$(git -C "$AFTERBIRD_DIR" rev-parse HEAD)" = "$AFTERBIRD_SHA"
             ARGS_SHA="$(sha256sum "$ARGS_FILE" | awk '{print $1}')"
             SISO_ENV_SHA="$(sha256sum "$SISO_ENV_FILE" | awk '{print $1}')"
-            SISO_RC_SHA="$(sha256sum "$SISO_RC_FILE" | awk '{print $1}')"
+            SISO_RC_RAW_SHA="$(sha256sum "$SISO_RC_FILE" | awk '{print $1}')"
+            SISO_RC_CONTENT="$(cat "$SISO_RC_FILE")"
+            case "$SISO_RC_CONTENT" in
+              'ninja -re_cache_enable_write=true')
+                SISO_RC_SHA="$SISO_RC_RAW_SHA"
+                ;;
+              'ninja -re_cache_enable_write=true --reapi_grpc_conn_pool=1 --reapi_keep_exec_stream')
+                SISO_RC_SHA="$(printf '%s\\n' 'ninja -re_cache_enable_write=true' | sha256sum | awk '{print $1}')"
+                echo "SISO_RC_FINGERPRINT=CANONICALIZED_REAPI_TRANSPORT_FLAGS"
+                ;;
+              *)
+                echo "Unsupported Siso RC content; refusing to assume checkpoint compatibility: $SISO_RC_CONTENT" >&2
+                exit 1
+                ;;
+            esac
             SISO_BACKEND_SHA="$(sha256sum "$SISO_BACKEND_FILE" | awk '{print $1}')"
             CLANG_COMPILER_GNI_SHA="$(sha256sum "$SRC_DIR/build/config/compiler/compiler.gni" | awk '{print $1}')"
             CHROMIUM_SHA="$(git -C "$SRC_DIR" rev-parse HEAD)"
@@ -544,8 +558,18 @@ jobs:
             CHECKPOINT_STATE_MODE="FRESH"
             if [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" ] \
                && [ -s "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta" ]; then
+              CHECKPOINT_FINGERPRINT_MATCH="false"
               if cmp -s "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta" \
                         "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta"; then
+                CHECKPOINT_FINGERPRINT_MATCH="true"
+              elif [ "$SISO_RC_CONTENT" = 'ninja -re_cache_enable_write=true --reapi_grpc_conn_pool=1 --reapi_keep_exec_stream' ] \
+                   && [ "$(sed -n 's/^siso_rc_sha=//p' "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta")" = "$SISO_RC_RAW_SHA" ] \
+                   && diff -u <(grep -v '^siso_rc_sha=' "$CIRCLE_WORKING_DIRECTORY/current-checkpoint.meta") \
+                              <(grep -v '^siso_rc_sha=' "$CIRCLE_WORKING_DIRECTORY/checkpoint.meta") >/dev/null; then
+                CHECKPOINT_FINGERPRINT_MATCH="true"
+                echo "CHECKPOINT_FINGERPRINT_COMPAT=PASS; only the approved REAPI transport flags changed the legacy raw Siso RC hash."
+              fi
+              if [ "$CHECKPOINT_FINGERPRINT_MATCH" = "true" ]; then
                 echo "Checkpoint fingerprint matches pinned build inputs."
                 if tar -x -I 'zstd -T0 -d' \
                      -f "$CIRCLE_WORKING_DIRECTORY/checkpoint.tar.zst" -C "$SRC_DIR"; then
