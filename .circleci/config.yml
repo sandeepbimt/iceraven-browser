@@ -14,33 +14,33 @@ jobs:
             equal: [2, << parameters.stage_index >>]
           steps:
             - restore_cache:
-                name: Early-check prior stage 1 output
+                name: Early-check prior stage 1 APK status
                 keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
       - when:
           condition:
             equal: [3, << parameters.stage_index >>]
           steps:
             - restore_cache:
-                name: Early-check prior stage 2 output
+                name: Early-check prior stage 2 APK status
                 keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
       - when:
           condition:
             equal: [4, << parameters.stage_index >>]
           steps:
             - restore_cache:
-                name: Early-check prior stage 3 output
+                name: Early-check prior stage 3 APK status
                 keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
       - when:
           condition:
             equal: [5, << parameters.stage_index >>]
           steps:
             - restore_cache:
-                name: Early-check prior stage 4 output
+                name: Early-check prior stage 4 APK status
                 keys:
-                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
+                  - sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Fast-exit later stages when a verified APK already exists
           command: |
@@ -50,33 +50,14 @@ jobs:
               echo "APK_FAST_PATH=NOT_APPLICABLE stage=1"
               exit 0
             fi
-            BASELINE="$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
-            APK="$BASELINE/ChromePublic.apk"
-            STATUS="$BASELINE/status.txt"
-            if [ ! -s "$STATUS" ] || ! grep -qx 'BUILD_FINISHED=true' "$STATUS" || [ ! -s "$APK" ]; then
-              echo "APK_FAST_PATH=MISS; continuing normal stage work."
+            STATUS="$CIRCLE_WORKING_DIRECTORY/apk-completion-status.txt"
+            if [ ! -s "$STATUS" ] || ! grep -qx 'BUILD_FINISHED=true' "$STATUS"; then
+              echo "APK_FAST_PATH=MISS; prior stage has not recorded a verified APK."
               exit 0
             fi
-            if python3 - "$APK" <<'PY'
-            import sys, zipfile
-            path = sys.argv[1]
-            try:
-                with zipfile.ZipFile(path) as apk:
-                    bad = apk.testzip()
-                    if bad:
-                        print(f"APK_ARCHIVE_INVALID entry={bad}", file=sys.stderr)
-                        raise SystemExit(1)
-            except (OSError, zipfile.BadZipFile) as exc:
-                print(f"APK_ARCHIVE_INVALID reason={exc}", file=sys.stderr)
-                raise SystemExit(1)
-            print("APK_ARCHIVE_VALID=true")
-            PY
-            then
-              echo "APK_FAST_PATH=PASS stage=$STAGE_INDEX; verified APK recovered from prior stage cache."
-              circleci-agent step halt
-            else
-              echo "APK_FAST_PATH=REJECTED; archive verification failed; continuing normal stage work."
-            fi
+            echo "APK_FAST_PATH=PASS stage=$STAGE_INDEX; prior stage recorded a ZIP-verified APK."
+            cat "$STATUS"
+            circleci-agent step halt
       - run:
           name: Record stage start time and validate BuildBuddy credentials
           command: |
@@ -221,6 +202,38 @@ jobs:
                 name: Restore latest prior-workflow checkpoint for stage 1
                 keys:
                   - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-
+      - when:
+          condition:
+            equal: [2, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 1 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-1
+      - when:
+          condition:
+            equal: [3, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 2 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-2
+      - when:
+          condition:
+            equal: [4, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 3 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-3
+      - when:
+          condition:
+            equal: [5, << parameters.stage_index >>]
+          steps:
+            - restore_cache:
+                name: Restore stage 4 checkpoint
+                keys:
+                  - sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-4
       - run:
           name: Measure build VM
           command: |
@@ -1222,21 +1235,45 @@ jobs:
             set -eux
             APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
             mkdir -p "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline"
-            if [ -s "$APK" ]; then
+            FAST_STATUS="$CIRCLE_WORKING_DIRECTORY/apk-completion-status.txt"
+            if [ -s "$APK" ] && python3 - "$APK" <<'PY'
+            import sys, zipfile
+            path = sys.argv[1]
+            try:
+                with zipfile.ZipFile(path) as apk:
+                    bad = apk.testzip()
+                    if bad:
+                        print(f"APK_ARCHIVE_INVALID entry={bad}", file=sys.stderr)
+                        raise SystemExit(1)
+            except (OSError, zipfile.BadZipFile) as exc:
+                print(f"APK_ARCHIVE_INVALID reason={exc}", file=sys.stderr)
+                raise SystemExit(1)
+            print("APK_ARCHIVE_VALID=true")
+            PY
+            then
               cp "$APK" "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/ChromePublic.apk"
-              printf 'BUILD_FINISHED=true\n' > "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
+              APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+              APK_SIZE="$(stat -c '%s' "$APK")"
+              printf 'BUILD_FINISHED=true\nAPK_ARCHIVE_VALID=true\nAPK_SHA256=%s\nAPK_SIZE_BYTES=%s\n' "$APK_SHA256" "$APK_SIZE" > "$FAST_STATUS"
+              cp "$FAST_STATUS" "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
             else
-              printf 'BUILD_FINISHED=false\nCheckpoint saved; APK is not complete yet.\n' > "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
+              printf 'BUILD_FINISHED=false\n' > "$FAST_STATUS"
+              printf 'BUILD_FINISHED=false\nAPK missing or ZIP verification failed.\n' > "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
             fi
+            cat "$FAST_STATUS"
             cat "$CIRCLE_WORKING_DIRECTORY/afterbird-baseline/status.txt"
       - save_cache:
-          name: Save checkpoint and APK status for the next stage
+          name: Save latest build-output checkpoint for the next stage or workflow
           key: sandfox-c4-siso-checkpoint-v4-journal-recovery-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
           paths:
             - checkpoint.tar.zst
             - checkpoint.meta
             - stage-frontier-cumulative.txt
-            - afterbird-baseline
+      - save_cache:
+          name: Save verified APK completion marker for the next stage
+          key: sandfox-apk-completion-{{ .Branch }}-{{ .Environment.CIRCLE_WORKFLOW_ID }}-stage-<< parameters.stage_index >>
+          paths:
+            - apk-completion-status.txt
       - store_artifacts:
           path: afterbird-baseline
           destination: afterbird-baseline
@@ -1247,8 +1284,8 @@ jobs:
             STAGE_INDEX=<< parameters.stage_index >>
             APK="$CIRCLE_WORKING_DIRECTORY/afterbird-chromium/src/out/afterbird_production/apks/ChromePublic.apk"
             RESULT="$CIRCLE_WORKING_DIRECTORY/stage-build-result.txt"
-            if [ -s "$APK" ]; then
-              echo "APK_GATE=PASS; ChromePublic.apk exists and is non-empty."
+            if [ -s "$APK" ] && grep -qx 'BUILD_FINISHED=true' "$CIRCLE_WORKING_DIRECTORY/apk-completion-status.txt"; then
+              echo "APK_GATE=PASS; ChromePublic.apk exists, is non-empty, and ZIP integrity was verified."
               exit 0
             fi
             if [ ! -s "$RESULT" ]; then
