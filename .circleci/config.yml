@@ -115,12 +115,39 @@ jobs:
                   mkdir -p "$SRC_DIR"
                   git -C "$SRC_DIR" init
                   git -C "$SRC_DIR" remote add origin "$CHROMIUM_URL"
-                  git -C "$SRC_DIR" \
-                    -c protocol.version=2 \
-                    -c http.lowSpeedLimit=0 \
-                    -c http.lowSpeedTime=300 \
-                    fetch --no-tags --depth=1 origin \
-                    "+refs/tags/$CHROMIUM_TAG:refs/tags/$CHROMIUM_TAG"
+                  FETCH_LOG="$(mktemp)"
+                  fetch_succeeded=false
+                  for attempt in 1 2 3; do
+                    if git -C "$SRC_DIR" \
+                      -c protocol.version=2 \
+                      -c http.lowSpeedLimit=0 \
+                      -c http.lowSpeedTime=300 \
+                      fetch --no-tags --depth=1 origin \
+                      "+refs/tags/$CHROMIUM_TAG:refs/tags/$CHROMIUM_TAG" >"$FETCH_LOG" 2>&1; then
+                      cat "$FETCH_LOG"
+                      echo "Chromium tag fetch succeeded on attempt $attempt."
+                      fetch_succeeded=true
+                      break
+                    else
+                      fetch_status=$?
+                    fi
+                    cat "$FETCH_LOG"
+                    if ! grep -Eqi 'bad pack header|No child processes|early EOF|HTTP 5[0-9][0-9]|RPC failed|remote end hung up|index-pack failed|invalid index-pack output' "$FETCH_LOG"; then
+                      echo "Chromium tag fetch failed for a non-transient reason; not retrying." >&2
+                      rm -f "$FETCH_LOG"
+                      exit "$fetch_status"
+                    fi
+                    if [ "$attempt" -eq 3 ]; then
+                      echo "Chromium tag fetch still failed after 3 attempts." >&2
+                      rm -f "$FETCH_LOG"
+                      exit "$fetch_status"
+                    fi
+                    delay=$((attempt * 15))
+                    echo "Transient Chromium source-server/Git transport failure; retrying in $delay seconds (attempt $((attempt + 1))/3)."
+                    sleep "$delay"
+                  done
+                  rm -f "$FETCH_LOG"
+                  test "$fetch_succeeded" = true
                   git -C "$SRC_DIR" checkout --force --detach "$CHROMIUM_TAG"
                   test "$(git -C "$SRC_DIR" describe --tags --exact-match)" = "$CHROMIUM_TAG"
                   printf '%s\n' \
